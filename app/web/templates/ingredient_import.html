@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Import ingredient</h2>
+  <form id="ingredient-import-form">
+    <div class="grid">
+      <label>SKU <input name="sku" required /></label>
+      <label>Category code <input name="category_code" type="number" min="0" max="9" required /></label>
+      <label>Trade name / INCI <input name="trade_name_inci" required /></label>
+      <label>Supplier <input name="supplier" required /></label>
+      <label>Spec grade <input name="spec_grade" /></label>
+      <label>Format
+        <select name="format" required>
+          <option>Powder</option>
+          <option>Liquid</option>
+          <option>Pellet</option>
+          <option>Film</option>
+          <option>Granules</option>
+          <option>Water</option>
+        </select>
+      </label>
+      <label>Pack size value <input name="pack_size_value" type="number" min="1" max="1000" required /></label>
+      <label>Pack size unit
+        <select name="pack_size_unit" required>
+          <option>kg</option>
+          <option>L</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Import</button>
+  </form>
+</section>
+{% endblock %}

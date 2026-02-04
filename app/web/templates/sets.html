@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Create set</h2>
+  <form id="set-form">
+    <label>SKUs (comma separated)
+      <input name="skus" required />
+    </label>
+    <button type="submit">Create set</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Existing sets</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Set code</th>
+        <th>SKUs</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in sets %}
+      <tr>
+        <td>{{ item.set_code }}</td>
+        <td>{{ item.sku_list | join(', ') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No sets yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
