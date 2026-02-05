@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from typing import Optional
+from fastapi import Request
 
-from fastapi import Depends, Request
-
-from app.auth import IapUser, require_iap_user
+from app.auth import AuthContext, require_auth_context
 from app.config import Settings, load_settings
 from app.services.bigquery_service import BigQueryService
 from app.services.storage_service import StorageService
@@ -22,18 +20,8 @@ def get_storage(request: Request) -> StorageService:
     return request.app.state.storage
 
 
-def get_actor(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-) -> Optional[IapUser]:
-    if settings.disable_auth:
-        return IapUser(email="local@example.com", user_id=None)
-    return require_iap_user(
-        x_goog_authenticated_user_email=request.headers.get(
-            "X-Goog-Authenticated-User-Email"
-        ),
-        x_goog_authenticated_user_id=request.headers.get("X-Goog-Authenticated-User-Id"),
-    )
+def get_actor(request: Request) -> AuthContext:
+    return require_auth_context(request)
 
 
 def init_services(settings: Settings) -> tuple[BigQueryService, StorageService]:

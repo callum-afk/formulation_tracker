@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.auth import parse_iap_headers
+from app.auth import get_auth_context
 from app.dependencies import init_services, init_settings
 from app.api.ingredients_api import router as ingredients_router
 from app.api.batches_api import router as batches_router
@@ -27,18 +27,15 @@ def startup() -> None:
 
 
 @app.middleware("http")
-async def iap_middleware(request: Request, call_next):
+async def auth_middleware(request: Request, call_next):
     if request.url.path in {"/health", "/static/app.js", "/static/styles.css"}:
         return await call_next(request)
-    settings = request.app.state.settings
-    if not settings.disable_auth:
-        try:
-            parse_iap_headers(
-                request.headers.get("X-Goog-Authenticated-User-Email"),
-                request.headers.get("X-Goog-Authenticated-User-Id"),
-            )
-        except ValueError as exc:
-            return JSONResponse(status_code=401, content={"ok": False, "error": str(exc)})
+
+    try:
+        get_auth_context(request)
+    except ValueError as exc:
+        return JSONResponse(status_code=401, content={"ok": False, "error": str(exc)})
+
     return await call_next(request)
 
 

@@ -16,7 +16,7 @@ class Settings:
     code_start_set: int
     code_start_weight: int
     code_start_batch: int
-    disable_auth: bool
+    auth_mode: str
 
 
 def _get_env(name: str) -> str:
@@ -27,6 +27,10 @@ def _get_env(name: str) -> str:
 
 
 def load_settings() -> Settings:
+    auth_mode = os.getenv("AUTH_MODE", "cloudrun").lower()
+    if auth_mode not in {"cloudrun", "iap", "none"}:
+        raise RuntimeError("AUTH_MODE must be one of: cloudrun, iap, none")
+
     return Settings(
         project_id=_get_env("PROJECT_ID"),
         dataset_id=_get_env("DATASET_ID"),
@@ -38,5 +42,5 @@ def load_settings() -> Settings:
         code_start_set=int(os.getenv("CODE_START_SET", "1")),
         code_start_weight=int(os.getenv("CODE_START_WEIGHT", "1")),
         code_start_batch=int(os.getenv("CODE_START_BATCH", "1")),
-        disable_auth=os.getenv("DISABLE_AUTH", "false").lower() == "true",
+        auth_mode=auth_mode,
     )
