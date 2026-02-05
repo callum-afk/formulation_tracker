@@ -2,6 +2,7 @@
 
 - Enable IAP for the Cloud Run service.
 - Ensure ingress settings are compatible with IAP (load balancer + IAP).
-- The app expects `X-Goog-Authenticated-User-Email` and `X-Goog-Authenticated-User-Id` headers.
+- Set `AUTH_MODE=iap` so the app expects `X-Goog-Authenticated-User-Email` headers.
+- The app strips the `accounts.google.com:` prefix from the email header when present.
 
-Local development can set `DISABLE_AUTH=true` to bypass IAP checks.
+For Cloud Run IAM identity-token auth without IAP, set `AUTH_MODE=cloudrun`.
