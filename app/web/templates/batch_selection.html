@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Create batch variant</h2>
+  <form id="batch-variant-form">
+    <label>Set code <input name="set_code" required /></label>
+    <label>Weight code <input name="weight_code" required /></label>
+    <label>Items (sku:batch, comma separated)
+      <input name="items" placeholder="SKU1:Batch1, SKU2:Batch2" required />
+    </label>
+    <button type="submit">Create variant</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Lookup variants</h2>
+  <form id="batch-variant-lookup-form">
+    <label>Set code <input name="set_code" required /></label>
+    <label>Weight code <input name="weight_code" required /></label>
+    <button type="submit">Load</button>
+  </form>
+  <div id="batch-variant-results"></div>
+</section>
+{% endblock %}

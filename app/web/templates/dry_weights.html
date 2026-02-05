@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Create dry weight variant</h2>
+  <form id="dry-weight-form">
+    <label>Set code <input name="set_code" required /></label>
+    <label>Items (sku:percent, comma separated)
+      <input name="items" placeholder="SKU1:50, SKU2:50" required />
+    </label>
+    <button type="submit">Create variant</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Lookup variants</h2>
+  <form id="dry-weight-lookup-form">
+    <label>Set code <input name="set_code" required /></label>
+    <button type="submit">Load</button>
+  </form>
+  <div id="dry-weight-results"></div>
+</section>
+{% endblock %}

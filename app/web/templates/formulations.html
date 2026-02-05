@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Formulations</h2>
+  <form id="formulations-filter-form">
+    <div class="grid">
+      <label>Set code <input name="set_code" /></label>
+      <label>Weight code <input name="weight_code" /></label>
+      <label>Batch variant code <input name="batch_variant_code" /></label>
+    </div>
+    <button type="submit">Search</button>
+  </form>
+  <div id="formulations-results"></div>
+</section>
+{% endblock %}

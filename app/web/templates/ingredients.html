@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Create ingredient</h2>
+  <form id="ingredient-form">
+    <div class="grid">
+      <label>Category code <input name="category_code" type="number" min="0" max="9" required /></label>
+      <label>Trade name / INCI <input name="trade_name_inci" required /></label>
+      <label>Supplier <input name="supplier" required /></label>
+      <label>Spec grade <input name="spec_grade" /></label>
+      <label>Format
+        <select name="format" required>
+          <option>Powder</option>
+          <option>Liquid</option>
+          <option>Pellet</option>
+          <option>Film</option>
+          <option>Granules</option>
+          <option>Water</option>
+        </select>
+      </label>
+      <label>Pack size value <input name="pack_size_value" type="number" min="1" max="1000" required /></label>
+      <label>Pack size unit
+        <select name="pack_size_unit" required>
+          <option>kg</option>
+          <option>L</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Create</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Ingredients</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Trade name</th>
+        <th>Supplier</th>
+        <th>Format</th>
+        <th>Pack</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.sku }}</td>
+        <td>{{ item.trade_name_inci }}</td>
+        <td>{{ item.supplier }}</td>
+        <td>{{ item.format }}</td>
+        <td>{{ item.pack_size_value }} {{ item.pack_size_unit }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No ingredients yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

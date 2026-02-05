@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Create batch</h2>
+  <form id="batch-form">
+    <div class="grid">
+      <label>SKU <input name="sku" required /></label>
+      <label>Batch code <input name="ingredient_batch_code" required /></label>
+      <label>Received at <input name="received_at" type="datetime-local" /></label>
+      <label>Notes <input name="notes" /></label>
+    </div>
+    <button type="submit">Create batch</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Lookup batches</h2>
+  <form id="batch-lookup-form">
+    <label>SKU <input name="sku" required /></label>
+    <button type="submit">Load</button>
+  </form>
+  <div id="batch-results"></div>
+</section>
+{% endblock %}
