@@ -37,32 +37,45 @@ def _parse_identity_token_payload(token: str) -> dict:
     return payload
 
 
+def _auth_from_iap_header(request: Request) -> AuthContext | None:
+    iap_email = request.headers.get("X-Goog-Authenticated-User-Email")
+    if not iap_email:
+        return None
+    return AuthContext(email=_normalize_iap_email(iap_email), provider="iap")
+
+
+def _auth_from_bearer_token(request: Request) -> AuthContext | None:
+    authorization = request.headers.get("Authorization")
+    if not authorization:
+        return None
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise ValueError("Missing Authorization bearer token")
+
+    payload = _parse_identity_token_payload(token)
+    email = payload.get("email") or payload.get("sub")
+    if not email:
+        raise ValueError("Missing email claim in identity token")
+    return AuthContext(email=str(email), provider="cloudrun")
+
+
 def get_auth_context(request: Request) -> AuthContext:
     auth_mode = request.app.state.settings.auth_mode
 
     if auth_mode == "none":
         return AuthContext(email="unknown", provider="none")
 
-    if auth_mode == "iap":
-        iap_email = request.headers.get("X-Goog-Authenticated-User-Email")
-        if not iap_email:
-            raise ValueError("Missing IAP user email header")
-        return AuthContext(email=_normalize_iap_email(iap_email), provider="iap")
+    if auth_mode in {"iap", "cloudrun"}:
+        auth_context = _auth_from_iap_header(request)
+        if auth_context:
+            return auth_context
 
-    if auth_mode == "cloudrun":
-        authorization = request.headers.get("Authorization")
-        if not authorization:
-            raise ValueError("Missing Authorization bearer token")
+        auth_context = _auth_from_bearer_token(request)
+        if auth_context:
+            return auth_context
 
-        scheme, _, token = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not token:
-            raise ValueError("Missing Authorization bearer token")
-
-        payload = _parse_identity_token_payload(token)
-        email = payload.get("email") or payload.get("sub")
-        if not email:
-            raise ValueError("Missing email claim in identity token")
-        return AuthContext(email=str(email), provider="cloudrun")
+        raise ValueError("Not authenticated")
 
     raise ValueError("Invalid AUTH_MODE configuration")
 
