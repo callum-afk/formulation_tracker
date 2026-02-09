@@ -3,12 +3,33 @@
 <section class="panel">
   <h2>Create set</h2>
   <form id="set-form">
-    <label>SKUs (comma separated)
-      <input name="skus" required />
-    </label>
+    <div class="grid" id="sku-selects">
+      {% for _ in range(8) %}
+      <label>SKU
+        <select name="skus">
+          <option value="">Select SKU</option>
+          {% for item in items %}
+          <option value="{{ item.sku }}">{{ item.sku }} - {{ item.trade_name_inci }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+    </div>
+    <button type="button" id="add-sku-select">Add another SKU</button>
     <button type="submit">Create set</button>
   </form>
 </section>
+
+<template id="sku-select-template">
+  <label>SKU
+    <select name="skus">
+      <option value="">Select SKU</option>
+      {% for item in items %}
+      <option value="{{ item.sku }}">{{ item.sku }} - {{ item.trade_name_inci }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</template>
 
 <section class="panel">
   <h2>Existing sets</h2>

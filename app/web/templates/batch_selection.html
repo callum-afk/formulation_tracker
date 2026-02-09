@@ -5,9 +5,14 @@
   <form id="batch-variant-form">
     <label>Set code <input name="set_code" required /></label>
     <label>Weight code <input name="weight_code" required /></label>
-    <label>Items (sku:batch, comma separated)
-      <input name="items" placeholder="SKU1:Batch1, SKU2:Batch2" required />
-    </label>
+    <button type="button" id="load-batch-items">Load SKUs</button>
+    <div id="batch-variant-items">
+      <table>
+        <tbody>
+          <tr><td>No SKUs loaded.</td></tr>
+        </tbody>
+      </table>
+    </div>
     <button type="submit">Create variant</button>
   </form>
 </section>
@@ -19,6 +24,12 @@
     <label>Weight code <input name="weight_code" required /></label>
     <button type="submit">Load</button>
   </form>
-  <div id="batch-variant-results"></div>
+  <div id="batch-variant-results">
+    <table>
+      <tbody>
+        <tr><td>No variants loaded.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

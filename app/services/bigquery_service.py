@@ -246,6 +246,22 @@ class BigQueryService:
         rows = self._run(query, [bigquery.ScalarQueryParameter("sku", "STRING", sku)]).result()
         return [dict(row) for row in rows]
 
+    def get_batch(self, sku: str, batch_code: str) -> Optional[Dict[str, Any]]:
+        query = (
+            f"SELECT * FROM `{self.dataset}.ingredient_batches` "
+            "WHERE sku = @sku AND ingredient_batch_code = @batch_code LIMIT 1"
+        )
+        rows = self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("sku", "STRING", sku),
+                bigquery.ScalarQueryParameter("batch_code", "STRING", batch_code),
+            ],
+        ).result()
+        for row in rows:
+            return dict(row)
+        return None
+
     def update_spec(self, sku: str, batch_code: str, object_path: str) -> None:
         query = (
             f"UPDATE `{self.dataset}.ingredient_batches` "

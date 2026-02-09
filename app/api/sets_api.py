@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings
 from app.models import ApiResponse, IngredientSetCreate
@@ -18,6 +18,12 @@ def create_set(
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    missing_skus = [sku for sku in payload.skus if not bigquery.get_ingredient(sku)]
+    if missing_skus:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown SKU(s): {', '.join(missing_skus)}",
+        )
     set_hash = hash_set(payload.skus)
     existing = bigquery.get_set_by_hash(set_hash)
     if existing:

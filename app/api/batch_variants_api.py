@@ -19,6 +19,16 @@ def create_batch_variant(
     settings=Depends(get_settings),
 ) -> ApiResponse:
     items = [(item.sku, item.ingredient_batch_code) for item in payload.items]
+    missing_batches = [
+        f"{sku}:{batch_code}"
+        for sku, batch_code in items
+        if not bigquery.get_batch(sku, batch_code)
+    ]
+    if missing_batches:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown batch(es): {', '.join(missing_batches)}",
+        )
     batch_hash = hash_batches(items)
     existing = bigquery.get_batch_variant_by_hash(payload.set_code, payload.weight_code, batch_hash)
     if existing:
