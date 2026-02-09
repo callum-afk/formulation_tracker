@@ -67,7 +67,7 @@ async def batch_selection(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/formulations", response_class=HTMLResponse)
+@router.get("/formulations/ui", response_class=HTMLResponse)
 async def formulations(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "formulations.html",
