@@ -23,6 +23,13 @@ def _validate_ingredient(payload: IngredientCreate) -> None:
     validate_format(payload.format)
 
 
+def _normalize_spec_grade(spec_grade: str | None) -> str | None:
+    if spec_grade is None:
+        return None
+    value = spec_grade.strip()
+    return value or None
+
+
 @router.post("", response_model=ApiResponse)
 def create_ingredient(
     payload: IngredientCreate,
@@ -35,7 +42,31 @@ def create_ingredient(
     except ValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    seq = bigquery.allocate_counter("ingredient_seq", str(payload.category_code), 1)
+    spec_grade = _normalize_spec_grade(payload.spec_grade)
+    duplicate = bigquery.find_ingredient_duplicate(
+        payload.category_code,
+        payload.trade_name_inci,
+        payload.supplier,
+        spec_grade,
+        payload.format,
+        payload.pack_size_value,
+        payload.pack_size_unit,
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ingredient already exists")
+
+    product = bigquery.find_ingredient_product(
+        payload.category_code,
+        payload.trade_name_inci,
+        payload.supplier,
+        spec_grade,
+        payload.format,
+        payload.pack_size_unit,
+    )
+    if product:
+        seq = int(product["seq"])
+    else:
+        seq = bigquery.allocate_counter("ingredient_seq", "global", 1)
     sku = format_sku(payload.category_code, seq, payload.pack_size_value)
     now = datetime.now(timezone.utc)
     bigquery.insert_ingredient(
@@ -47,7 +78,7 @@ def create_ingredient(
             "pack_size_unit": payload.pack_size_unit,
             "trade_name_inci": payload.trade_name_inci,
             "supplier": payload.supplier,
-            "spec_grade": payload.spec_grade,
+            "spec_grade": spec_grade,
             "format": payload.format,
             "created_at": now,
             "updated_at": now,
@@ -74,6 +105,40 @@ def import_ingredient(
     except (ValidationError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    spec_grade = _normalize_spec_grade(payload.spec_grade)
+    duplicate = bigquery.find_ingredient_duplicate(
+        category_code,
+        payload.trade_name_inci,
+        payload.supplier,
+        spec_grade,
+        payload.format,
+        pack_size_value,
+        payload.pack_size_unit,
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ingredient already exists")
+
+    product = bigquery.find_ingredient_product(
+        category_code,
+        payload.trade_name_inci,
+        payload.supplier,
+        spec_grade,
+        payload.format,
+        payload.pack_size_unit,
+    )
+    if product and int(product["seq"]) != seq:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="SKU sequence must match existing product",
+        )
+    if not product:
+        existing_seq = bigquery.find_ingredient_by_seq(seq)
+        if existing_seq:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SKU sequence already assigned",
+            )
+
     now = datetime.now(timezone.utc)
     bigquery.insert_ingredient(
         {
@@ -84,7 +149,7 @@ def import_ingredient(
             "pack_size_unit": payload.pack_size_unit,
             "trade_name_inci": payload.trade_name_inci,
             "supplier": payload.supplier,
-            "spec_grade": payload.spec_grade,
+            "spec_grade": spec_grade,
             "format": payload.format,
             "created_at": now,
             "updated_at": now,
