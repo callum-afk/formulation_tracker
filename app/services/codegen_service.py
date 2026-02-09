@@ -20,10 +20,18 @@ def int_to_code(value: int) -> str:
 
 
 def format_sku(category_code: int, seq: int, pack_size_value: int) -> str:
-    return f"{category_code}{seq:04d}{pack_size_value}"
+    return f"{category_code}_{seq:04d}_{pack_size_value}"
 
 
 def parse_sku(sku: str) -> Tuple[int, int, int]:
+    if "_" in sku:
+        parts = sku.split("_")
+        if len(parts) != 3:
+            raise ValueError("sku format should be <category>_<seq>_<pack_size>")
+        category_code = int(parts[0])
+        seq = int(parts[1])
+        pack_size_value = int(parts[2])
+        return category_code, seq, pack_size_value
     if len(sku) < 6:
         raise ValueError("sku too short")
     category_code = int(sku[0])
