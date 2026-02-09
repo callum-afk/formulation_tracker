@@ -35,10 +35,11 @@ async def ingredient_import(request: Request) -> HTMLResponse:
 
 
 @router.get("/batches", response_class=HTMLResponse)
-async def batches(request: Request) -> HTMLResponse:
+async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "batches.html",
-        {"request": request, "title": "Batches"},
+        {"request": request, "title": "Batches", "items": items},
     )
 
 
