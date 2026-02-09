@@ -24,11 +24,24 @@ def create_batch(
     if not ingredient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
     now = datetime.now(timezone.utc)
+    received_at = None
+    if payload.received_at:
+        try:
+            parsed = datetime.fromisoformat(payload.received_at)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid received_at timestamp",
+            ) from exc
+        if parsed.tzinfo is None:
+            received_at = parsed.replace(tzinfo=timezone.utc)
+        else:
+            received_at = parsed.astimezone(timezone.utc)
     bigquery.insert_batch(
         {
             "sku": payload.sku,
             "ingredient_batch_code": payload.ingredient_batch_code,
-            "received_at": payload.received_at,
+            "received_at": received_at,
             "notes": payload.notes,
             "created_at": now,
             "updated_at": now,
