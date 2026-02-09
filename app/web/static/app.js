@@ -6,9 +6,70 @@ async function postJson(url, payload) {
   });
   const data = await response.json();
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || response.statusText);
+    throw new Error(data.error || data.detail || response.statusText);
   }
   return data.data;
+}
+
+function clearElement(element) {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
+
+function buildTable(container, headers, rows, emptyMessage) {
+  const table = document.createElement('table');
+  if (headers.length > 0) {
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    headers.forEach((header) => {
+      const th = document.createElement('th');
+      th.textContent = header;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+  }
+  const tbody = document.createElement('tbody');
+  if (rows.length === 0) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = headers.length || 1;
+    cell.textContent = emptyMessage;
+    row.appendChild(cell);
+    tbody.appendChild(row);
+  } else {
+    rows.forEach((rowData) => {
+      const row = document.createElement('tr');
+      rowData.forEach((cellValue) => {
+        const cell = document.createElement('td');
+        if (cellValue instanceof HTMLElement) {
+          cell.appendChild(cellValue);
+        } else {
+          cell.textContent = cellValue ?? '';
+        }
+        row.appendChild(cell);
+      });
+      tbody.appendChild(row);
+    });
+  }
+  table.appendChild(tbody);
+  clearElement(container);
+  container.appendChild(table);
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) {
+    return value;
+  }
+  if (Number.isInteger(numeric)) {
+    return `${numeric}%`;
+  }
+  return `${numeric.toFixed(2)}%`;
 }
 
 function parseList(value, separator = ',') {
@@ -82,16 +143,56 @@ function attachBatchLookupForm() {
       alert(data.error || 'Error loading batches');
       return;
     }
-    output.textContent = JSON.stringify(data.data.items, null, 2);
+    const items = data.data.items || [];
+    clearElement(output);
+    if (items.length === 0) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = 'No batches found.';
+      row.appendChild(cell);
+      output.appendChild(row);
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement('tr');
+      const skuCell = document.createElement('td');
+      skuCell.textContent = item.sku;
+      const codeCell = document.createElement('td');
+      codeCell.textContent = item.ingredient_batch_code;
+      const receivedCell = document.createElement('td');
+      receivedCell.textContent = item.received_at ? new Date(item.received_at).toLocaleString() : '';
+      const notesCell = document.createElement('td');
+      notesCell.textContent = item.notes || '';
+      row.appendChild(skuCell);
+      row.appendChild(codeCell);
+      row.appendChild(receivedCell);
+      row.appendChild(notesCell);
+      output.appendChild(row);
+    });
   });
 }
 
 function attachSetForm() {
   const form = document.getElementById('set-form');
   if (!form) return;
+  const addButton = document.getElementById('add-sku-select');
+  const selectsContainer = document.getElementById('sku-selects');
+  const template = document.getElementById('sku-select-template');
+  if (addButton && selectsContainer && template) {
+    addButton.addEventListener('click', () => {
+      const fragment = template.content.cloneNode(true);
+      selectsContainer.appendChild(fragment);
+    });
+  }
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const skus = parseList(new FormData(form).get('skus'));
+    const selects = Array.from(form.querySelectorAll('select[name="skus"]'));
+    const skus = selects.map((select) => select.value.trim()).filter(Boolean);
+    if (skus.length === 0) {
+      alert('Select at least one SKU.');
+      return;
+    }
     try {
       await postJson('/api/sets', { skus });
       window.location.reload();
@@ -136,26 +237,113 @@ function attachDryWeightLookupForm() {
       alert(data.error || 'Error loading weights');
       return;
     }
-    output.textContent = JSON.stringify(data.data.items, null, 2);
+    const variants = data.data.items || [];
+    const skuSet = new Set();
+    variants.forEach((variant) => {
+      (variant.items || []).forEach((item) => skuSet.add(item.sku));
+    });
+    const skuList = Array.from(skuSet);
+    const headers = ['Set code', 'Weight code', ...skuList];
+    const rows = variants.map((variant) => {
+      const skuMap = new Map();
+      (variant.items || []).forEach((item) => {
+        skuMap.set(item.sku, item.wt_percent);
+      });
+      return [
+        variant.set_code || '',
+        variant.weight_code || '',
+        ...skuList.map((sku) => formatPercent(skuMap.get(sku))),
+      ];
+    });
+    buildTable(output, headers, rows, 'No variants found.');
   });
 }
 
 function attachBatchVariantForm() {
   const form = document.getElementById('batch-variant-form');
   if (!form) return;
+  const loadButton = document.getElementById('load-batch-items');
+  const itemsContainer = document.getElementById('batch-variant-items');
+
+  async function loadBatchItems() {
+    const formData = new FormData(form);
+    const setCode = formData.get('set_code');
+    const weightCode = formData.get('weight_code');
+    if (!setCode || !weightCode) {
+      alert('Enter a set code and weight code to load SKUs.');
+      return;
+    }
+    const weightsResponse = await fetch(`/api/dry_weights?set_code=${encodeURIComponent(setCode)}`);
+    const weightsData = await weightsResponse.json();
+    if (!weightsData.ok) {
+      alert(weightsData.error || 'Error loading weight variants');
+      return;
+    }
+    const variants = weightsData.data.items || [];
+    const variant = variants.find((row) => row.weight_code === weightCode);
+    if (!variant) {
+      buildTable(itemsContainer, ['SKU', 'Batch'], [], 'No matching weight variant found.');
+      return;
+    }
+    const skuList = (variant.items || []).map((item) => item.sku);
+    const batchLists = await Promise.all(
+      skuList.map(async (sku) => {
+        const response = await fetch(`/api/ingredient_batches?sku=${encodeURIComponent(sku)}`);
+        const data = await response.json();
+        if (!data.ok) {
+          return { sku, batches: [], error: data.error };
+        }
+        return { sku, batches: data.data.items || [], error: null };
+      })
+    );
+    const rows = batchLists.map(({ sku, batches, error }) => {
+      const select = document.createElement('select');
+      select.dataset.sku = sku;
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = error ? 'Error loading batches' : 'Select batch';
+      select.appendChild(placeholder);
+      batches.forEach((batch) => {
+        const option = document.createElement('option');
+        option.value = batch.ingredient_batch_code;
+        option.textContent = batch.ingredient_batch_code;
+        select.appendChild(option);
+      });
+      return [sku, select];
+    });
+    buildTable(itemsContainer, ['SKU', 'Batch'], rows, 'No SKUs found for this weight variant.');
+  }
+
+  if (loadButton) {
+    loadButton.addEventListener('click', () => {
+      loadBatchItems().catch((error) => {
+        alert(error.message || 'Error loading batch items');
+      });
+    });
+  }
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
     const setCode = formData.get('set_code');
     const weightCode = formData.get('weight_code');
-    const itemsRaw = parseList(formData.get('items'));
-    const items = itemsRaw.map((entry) => {
-      const [sku, batch] = entry.split(':').map((item) => item.trim());
-      return { sku, ingredient_batch_code: batch };
-    });
+    const selects = Array.from(itemsContainer.querySelectorAll('select[data-sku]'));
+    if (selects.length === 0) {
+      alert('Load SKUs before creating a variant.');
+      return;
+    }
+    const items = [];
+    for (const select of selects) {
+      const batchCode = select.value;
+      if (!batchCode) {
+        alert('Select a batch for each SKU.');
+        return;
+      }
+      items.push({ sku: select.dataset.sku, ingredient_batch_code: batchCode });
+    }
     try {
       await postJson('/api/batch_variants', { set_code: setCode, weight_code: weightCode, items });
       form.reset();
+      buildTable(itemsContainer, ['SKU', 'Batch'], [], 'No SKUs loaded.');
       alert('Batch variant created');
     } catch (error) {
       alert(error.message);
@@ -180,7 +368,26 @@ function attachBatchVariantLookupForm() {
       alert(data.error || 'Error loading batch variants');
       return;
     }
-    output.textContent = JSON.stringify(data.data.items, null, 2);
+    const variants = data.data.items || [];
+    const skuSet = new Set();
+    variants.forEach((variant) => {
+      (variant.items || []).forEach((item) => skuSet.add(item.sku));
+    });
+    const skuList = Array.from(skuSet);
+    const headers = ['Set code', 'Weight code', 'Batch variant code', ...skuList];
+    const rows = variants.map((variant) => {
+      const skuMap = new Map();
+      (variant.items || []).forEach((item) => {
+        skuMap.set(item.sku, item.ingredient_batch_code);
+      });
+      return [
+        variant.set_code || '',
+        variant.weight_code || '',
+        variant.batch_variant_code || '',
+        ...skuList.map((sku) => skuMap.get(sku) || ''),
+      ];
+    });
+    buildTable(output, headers, rows, 'No batch variants found.');
   });
 }
 
@@ -197,7 +404,14 @@ function attachFormulationsFilterForm() {
       alert(data.error || 'Error loading formulations');
       return;
     }
-    output.textContent = JSON.stringify(data.data.items, null, 2);
+    const items = data.data.items || [];
+    if (items.length === 0) {
+      buildTable(output, [], [], 'No formulations found.');
+      return;
+    }
+    const headers = Object.keys(items[0]);
+    const rows = items.map((item) => headers.map((header) => item[header] ?? ''));
+    buildTable(output, headers, rows, 'No formulations found.');
   });
 }
 

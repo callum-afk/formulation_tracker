@@ -46,9 +46,10 @@ async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigq
 @router.get("/sets", response_class=HTMLResponse)
 async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     sets_data = bigquery.list_sets()
+    items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "sets.html",
-        {"request": request, "title": "Ingredient Sets", "sets": sets_data},
+        {"request": request, "title": "Ingredient Sets", "sets": sets_data, "items": items},
     )
 
 

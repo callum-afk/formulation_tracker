@@ -24,6 +24,18 @@
     <label>SKU <input name="sku" list="sku-list" required /></label>
     <button type="submit">Load</button>
   </form>
-  <div id="batch-results"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Batch code</th>
+        <th>Received at</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody id="batch-results">
+      <tr><td colspan="4">No batches loaded.</td></tr>
+    </tbody>
+  </table>
 </section>
 {% endblock %}
