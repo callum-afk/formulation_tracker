@@ -4,7 +4,20 @@
   <h2>Create ingredient</h2>
   <form id="ingredient-form">
     <div class="grid">
-      <label>Category code <input name="category_code" type="number" min="0" max="9" required /></label>
+      <label>Category code
+        <select name="category_code" required>
+          <option value="0">0 - Seaweed</option>
+          <option value="1">1 - Starch</option>
+          <option value="2">2 - Fibre</option>
+          <option value="3">3 - Plasticiser</option>
+          <option value="4">4 - Roll</option>
+          <option value="5">5 - Oil and Wax</option>
+          <option value="6">6 - Mix</option>
+          <option value="7">7 - Pellet</option>
+          <option value="8">8 - Additives</option>
+          <option value="9">9 - Other</option>
+        </select>
+      </label>
       <label>Trade name / INCI <input name="trade_name_inci" required /></label>
       <label>Supplier <input name="supplier" required /></label>
       <label>Spec grade <input name="spec_grade" /></label>
