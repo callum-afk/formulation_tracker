@@ -43,6 +43,9 @@ async def auth_middleware(request: Request, call_next):
 async def health() -> dict:
     return {"ok": True}
 
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "formulation-tracker"}
 
 app.include_router(ingredients_router)
 app.include_router(batches_router)
