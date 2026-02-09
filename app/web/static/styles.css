@@ -21,6 +21,16 @@ body {
   text-decoration: none;
 }
 
+.inci-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.inci-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
 main {
   padding: 2rem;
 }

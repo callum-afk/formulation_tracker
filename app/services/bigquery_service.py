@@ -103,6 +103,80 @@ class BigQueryService:
         ]
         self._run(query, params).result()
 
+    def find_ingredient_duplicate(
+        self,
+        category_code: int,
+        trade_name_inci: str,
+        supplier: str,
+        spec_grade: Optional[str],
+        format: str,
+        pack_size_value: int,
+        pack_size_unit: str,
+    ) -> Optional[Dict[str, Any]]:
+        query = (
+            f"SELECT * FROM `{self.dataset}.ingredients` "
+            "WHERE category_code = @category_code "
+            "AND trade_name_inci = @trade_name_inci "
+            "AND supplier = @supplier "
+            "AND format = @format "
+            "AND pack_size_value = @pack_size_value "
+            "AND pack_size_unit = @pack_size_unit "
+            "AND ((spec_grade IS NULL AND @spec_grade IS NULL) OR spec_grade = @spec_grade) "
+            "LIMIT 1"
+        )
+        params = [
+            bigquery.ScalarQueryParameter("category_code", "INT64", category_code),
+            bigquery.ScalarQueryParameter("trade_name_inci", "STRING", trade_name_inci),
+            bigquery.ScalarQueryParameter("supplier", "STRING", supplier),
+            bigquery.ScalarQueryParameter("format", "STRING", format),
+            bigquery.ScalarQueryParameter("pack_size_value", "INT64", pack_size_value),
+            bigquery.ScalarQueryParameter("pack_size_unit", "STRING", pack_size_unit),
+            bigquery.ScalarQueryParameter("spec_grade", "STRING", spec_grade),
+        ]
+        rows = self._run(query, params).result()
+        for row in rows:
+            return dict(row)
+        return None
+
+    def find_ingredient_product(
+        self,
+        category_code: int,
+        trade_name_inci: str,
+        supplier: str,
+        spec_grade: Optional[str],
+        format: str,
+        pack_size_unit: str,
+    ) -> Optional[Dict[str, Any]]:
+        query = (
+            f"SELECT * FROM `{self.dataset}.ingredients` "
+            "WHERE category_code = @category_code "
+            "AND trade_name_inci = @trade_name_inci "
+            "AND supplier = @supplier "
+            "AND format = @format "
+            "AND pack_size_unit = @pack_size_unit "
+            "AND ((spec_grade IS NULL AND @spec_grade IS NULL) OR spec_grade = @spec_grade) "
+            "LIMIT 1"
+        )
+        params = [
+            bigquery.ScalarQueryParameter("category_code", "INT64", category_code),
+            bigquery.ScalarQueryParameter("trade_name_inci", "STRING", trade_name_inci),
+            bigquery.ScalarQueryParameter("supplier", "STRING", supplier),
+            bigquery.ScalarQueryParameter("format", "STRING", format),
+            bigquery.ScalarQueryParameter("pack_size_unit", "STRING", pack_size_unit),
+            bigquery.ScalarQueryParameter("spec_grade", "STRING", spec_grade),
+        ]
+        rows = self._run(query, params).result()
+        for row in rows:
+            return dict(row)
+        return None
+
+    def find_ingredient_by_seq(self, seq: int) -> Optional[Dict[str, Any]]:
+        query = f"SELECT * FROM `{self.dataset}.ingredients` WHERE seq = @seq LIMIT 1"
+        rows = self._run(query, [bigquery.ScalarQueryParameter("seq", "INT64", seq)]).result()
+        for row in rows:
+            return dict(row)
+        return None
+
     def list_ingredients(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         where = []
         params: List[bigquery.ScalarQueryParameter] = []

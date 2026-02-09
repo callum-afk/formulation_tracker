@@ -18,7 +18,9 @@
           <option value="9">9 - Other</option>
         </select>
       </label>
-      <label>Trade name / INCI <input name="trade_name_inci" required /></label>
+      <label>Trade name / <a class="inci-link" href="https://ec.europa.eu/growth/tools-databases/cosing/" target="_blank" rel="noopener">INCI</a>
+        <input name="trade_name_inci" required />
+      </label>
       <label>Supplier <input name="supplier" required /></label>
       <label>Spec grade <input name="spec_grade" /></label>
       <label>Format
@@ -51,6 +53,7 @@
         <th>SKU</th>
         <th>Trade name</th>
         <th>Supplier</th>
+        <th>Spec / Grade</th>
         <th>Format</th>
         <th>Pack</th>
       </tr>
@@ -61,11 +64,12 @@
         <td>{{ item.sku }}</td>
         <td>{{ item.trade_name_inci }}</td>
         <td>{{ item.supplier }}</td>
+        <td>{{ item.spec_grade or "" }}</td>
         <td>{{ item.format }}</td>
         <td>{{ item.pack_size_value }} {{ item.pack_size_unit }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No ingredients yet.</td></tr>
+      <tr><td colspan="6">No ingredients yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
