@@ -66,16 +66,27 @@ def get_auth_context(request: Request) -> AuthContext:
     if auth_mode == "none":
         return AuthContext(email="unknown", provider="none")
 
-    if auth_mode in {"iap", "cloudrun"}:
+    if auth_mode == "iap":
         auth_context = _auth_from_iap_header(request)
         if auth_context:
             return auth_context
+        raise ValueError("Not authenticated via IAP")
 
+    if auth_mode == "cloudrun":
         auth_context = _auth_from_bearer_token(request)
         if auth_context:
             return auth_context
+        raise ValueError("Missing Authorization bearer token")
 
+    if auth_mode == "iap_or_cloudrun":
+        auth_context = _auth_from_iap_header(request)
+        if auth_context:
+            return auth_context
+        auth_context = _auth_from_bearer_token(request)
+        if auth_context:
+            return auth_context
         raise ValueError("Not authenticated")
+
 
     raise ValueError("Invalid AUTH_MODE configuration")
 
