@@ -28,7 +28,7 @@ def startup() -> None:
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    if request.url.path in {"/health", "/static/app.js", "/static/styles.css"}:
+    if request.url.path == "/health" or request.url.path.startswith("/static/"):
         return await call_next(request)
 
     try:
