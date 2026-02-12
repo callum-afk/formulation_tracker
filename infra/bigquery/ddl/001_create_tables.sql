@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.ingredients` (
   updated_by STRING,
   is_active BOOL NOT NULL,
   msds_object_path STRING,
+  msds_filename STRING,
+  msds_content_type STRING,
   msds_uploaded_at TIMESTAMP
 );
 

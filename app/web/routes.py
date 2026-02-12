@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.dependencies import get_bigquery
+from app.dependencies import get_bigquery, get_settings, get_storage
 from app.services.bigquery_service import BigQueryService
+from app.services.storage_service import StorageService
 
 router = APIRouter()
 
@@ -18,11 +19,12 @@ async def home(request: Request) -> HTMLResponse:
 
 
 @router.get("/ingredients", response_class=HTMLResponse)
-async def ingredients(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    items = bigquery.list_ingredients({})
+async def ingredients(request: Request, q: str | None = None, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    filters = {"q": q} if q else {}
+    items = bigquery.list_ingredients(filters)
     return templates.TemplateResponse(
         "ingredients.html",
-        {"request": request, "title": "Ingredients", "items": items},
+        {"request": request, "title": "Ingredients", "items": items, "q": q or ""},
     )
 
 
@@ -75,3 +77,28 @@ async def formulations(request: Request) -> HTMLResponse:
         "formulations.html",
         {"request": request, "title": "Formulations"},
     )
+
+
+@router.get("/ingredients/{sku}/edit", response_class=HTMLResponse)
+async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    ingredient = bigquery.get_ingredient(sku)
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    return templates.TemplateResponse(
+        "ingredient_edit.html",
+        {"request": request, "title": f"Edit {sku}", "ingredient": ingredient},
+    )
+
+
+@router.get("/ingredients/{sku}/msds")
+async def ingredient_msds_download(
+    sku: str,
+    bigquery: BigQueryService = Depends(get_bigquery),
+    storage: StorageService = Depends(get_storage),
+    settings=Depends(get_settings),
+):
+    ingredient = bigquery.get_ingredient(sku)
+    if not ingredient or not ingredient.get("msds_object_path"):
+        raise HTTPException(status_code=404, detail="MSDS not found")
+    url = storage.generate_download_url(settings.bucket_msds, ingredient["msds_object_path"], ttl_minutes=10)
+    return RedirectResponse(url=url, status_code=302)

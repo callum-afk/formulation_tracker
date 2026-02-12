@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings, get_storage
 from app.models import ApiResponse, IngredientCreate, IngredientImport, UploadConfirm, UploadRequest
@@ -22,6 +24,12 @@ def _validate_ingredient(payload: IngredientCreate) -> None:
     validate_pack_size_value(payload.pack_size_value)
     validate_format(payload.format)
 
+
+
+
+def _safe_filename(filename: str) -> str:
+    base = Path(filename).name
+    return base.replace(" ", "_")
 
 def _normalize_spec_grade(spec_grade: str | None) -> str | None:
     if spec_grade is None:
@@ -86,6 +94,8 @@ def create_ingredient(
             "updated_by": actor.email if actor else None,
             "is_active": True,
             "msds_object_path": None,
+            "msds_filename": None,
+            "msds_content_type": None,
             "msds_uploaded_at": None,
         }
     )
@@ -157,6 +167,8 @@ def import_ingredient(
             "updated_by": actor.email if actor else None,
             "is_active": True,
             "msds_object_path": None,
+            "msds_filename": None,
+            "msds_content_type": None,
             "msds_uploaded_at": None,
         }
     )
@@ -196,46 +208,51 @@ def get_ingredient(sku: str, bigquery: BigQueryService = Depends(get_bigquery)) 
     return ApiResponse(ok=True, data={"ingredient": ingredient})
 
 
-@router.post("/{sku}/msds/upload_url", response_model=ApiResponse)
-def msds_upload_url(
+@router.post("/{sku}/msds", response_model=ApiResponse)
+async def upload_msds(
     sku: str,
-    payload: UploadRequest,
+    file: UploadFile = File(...),
+    replace_confirmed: bool = Form(False),
     bigquery: BigQueryService = Depends(get_bigquery),
     storage: StorageService = Depends(get_storage),
     settings=Depends(get_settings),
+    actor=Depends(get_actor),
 ) -> ApiResponse:
-    if payload.content_type != "application/pdf":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
-    if payload.content_length > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large")
     ingredient = bigquery.get_ingredient(sku)
     if not ingredient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
+
+    if ingredient.get("msds_object_path") and not replace_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ingredient already has an MSDS. Confirm replacement to continue.",
+        )
+
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large")
+
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    object_path = f"msds/{sku}/{timestamp}_{payload.filename}"
-    upload_url = storage.generate_upload_url(settings.bucket_msds, object_path, payload.content_type)
-    return ApiResponse(
-        ok=True,
-        data={"upload_url": upload_url, "object_path": object_path, "expires_at": None},
+    safe_name = _safe_filename(file.filename or "msds.pdf")
+    object_path = f"msds/ingredients/{sku}/{timestamp}_{uuid4().hex}_{safe_name}"
+    storage.upload_bytes(settings.bucket_msds, object_path, content, file.content_type)
+
+    previous_object_path = ingredient.get("msds_object_path")
+    bigquery.update_msds(
+        sku,
+        object_path,
+        filename=file.filename or safe_name,
+        content_type=file.content_type,
+        updated_by=actor.email if actor else None,
     )
 
+    if previous_object_path and previous_object_path != object_path:
+        storage.delete_object(settings.bucket_msds, previous_object_path)
 
-@router.post("/{sku}/msds/confirm", response_model=ApiResponse)
-def msds_confirm(
-    sku: str,
-    payload: UploadConfirm,
-    bigquery: BigQueryService = Depends(get_bigquery),
-    storage: StorageService = Depends(get_storage),
-    settings=Depends(get_settings),
-) -> ApiResponse:
-    if payload.content_type != "application/pdf":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
-    if payload.content_length > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large")
-    if not storage.object_exists(settings.bucket_msds, payload.object_path):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Object not found")
-    bigquery.update_msds(sku, payload.object_path)
-    return ApiResponse(ok=True, data={"object_path": payload.object_path})
+    return ApiResponse(ok=True, data={"object_path": object_path, "filename": file.filename, "content_type": file.content_type})
 
 
 @router.get("/{sku}/msds/download_url", response_model=ApiResponse)
@@ -248,5 +265,5 @@ def msds_download_url(
     ingredient = bigquery.get_ingredient(sku)
     if not ingredient or not ingredient.get("msds_object_path"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MSDS not found")
-    url = storage.generate_download_url(settings.bucket_msds, ingredient["msds_object_path"])
+    url = storage.generate_download_url(settings.bucket_msds, ingredient["msds_object_path"], ttl_minutes=10)
     return ApiResponse(ok=True, data={"download_url": url})

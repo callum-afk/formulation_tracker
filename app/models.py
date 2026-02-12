@@ -68,3 +68,10 @@ class UploadConfirm(BaseModel):
     filename: str
     content_type: str
     content_length: int = Field(gt=0)
+
+
+class MsdsUploadResponse(BaseModel):
+    object_path: str
+    filename: str
+    content_type: str
+    uploaded_at: Optional[str] = None

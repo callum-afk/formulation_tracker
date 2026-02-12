@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
-  <h2>Create ingredient</h2>
+  <h2>Create SKU Code</h2>
   <form id="ingredient-form">
     <div class="grid">
       <label>Category code
@@ -25,52 +25,42 @@
       <label>Spec grade <input name="spec_grade" /></label>
       <label>Format
         <select name="format" required>
-          <option>Powder</option>
-          <option>Liquid</option>
-          <option>Pellet</option>
-          <option>Film</option>
-          <option>Granules</option>
-          <option>Water</option>
+          <option>Powder</option><option>Liquid</option><option>Pellet</option><option>Film</option><option>Granules</option><option>Water</option>
         </select>
       </label>
       <label>Pack size value <input name="pack_size_value" type="number" min="1" max="1000" required /></label>
       <label>Pack size unit
-        <select name="pack_size_unit" required>
-          <option>kg</option>
-          <option>L</option>
-        </select>
+        <select name="pack_size_unit" required><option>kg</option><option>L</option></select>
+      </label>
+      <label>MSDS (PDF, optional)
+        <input type="file" name="msds_file" accept="application/pdf" />
       </label>
     </div>
-    <button type="submit">Create</button>
+    <button type="submit">Create SKU Code</button>
+    <p id="ingredient-form-status"></p>
   </form>
 </section>
 
 <section class="panel">
   <h2>Ingredients</h2>
+  <form method="get" action="/ingredients" style="margin-bottom: 12px;">
+    <label>Lookup SKU / ingredient
+      <input type="text" name="q" value="{{ q }}" placeholder="Search SKU, trade name, supplier" />
+    </label>
+    <button type="submit">Filter</button>
+    <a href="/ingredients">Clear</a>
+  </form>
   <table>
-    <thead>
-      <tr>
-        <th>SKU</th>
-        <th>Trade name</th>
-        <th>Supplier</th>
-        <th>Spec / Grade</th>
-        <th>Format</th>
-        <th>Pack</th>
-      </tr>
-    </thead>
+    <thead><tr><th>SKU</th><th>Trade name</th><th>Supplier</th><th>Spec / Grade</th><th>Format</th><th>Pack</th><th>Owner</th><th>MSDS</th><th>Actions</th></tr></thead>
     <tbody>
       {% for item in items %}
       <tr>
-        <td>{{ item.sku }}</td>
-        <td>{{ item.trade_name_inci }}</td>
-        <td>{{ item.supplier }}</td>
-        <td>{{ item.spec_grade or "" }}</td>
-        <td>{{ item.format }}</td>
-        <td>{{ item.pack_size_value }} {{ item.pack_size_unit }}</td>
+        <td>{{ item.sku }}</td><td>{{ item.trade_name_inci }}</td><td>{{ item.supplier }}</td><td>{{ item.spec_grade or "" }}</td><td>{{ item.format }}</td><td>{{ item.pack_size_value }} {{ item.pack_size_unit }}</td>
+        <td>{{ item.created_by or "" }}</td>
+        <td>{% if item.msds_object_path %}<a href="/ingredients/{{ item.sku }}/msds">MSDS</a>{% else %}None{% endif %}</td>
+        <td><a href="/ingredients/{{ item.sku }}/edit">Edit</a></td>
       </tr>
-      {% else %}
-      <tr><td colspan="6">No ingredients yet.</td></tr>
-      {% endfor %}
+      {% else %}<tr><td colspan="9">No ingredients yet.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>

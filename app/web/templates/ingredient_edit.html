@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Edit SKU {{ ingredient.sku }}</h2>
+  <p><strong>Owner:</strong> {{ ingredient.created_by or "" }}</p>
+  <p><strong>Current MSDS:</strong> {% if ingredient.msds_object_path %}<a href="/ingredients/{{ ingredient.sku }}/msds">MSDS</a>{% else %}None{% endif %}</p>
+  <form id="ingredient-msds-form" data-sku="{{ ingredient.sku }}" data-has-msds="{{ '1' if ingredient.msds_object_path else '0' }}">
+    <label>Upload MSDS (PDF only)
+      <input type="file" name="msds_file" accept="application/pdf" required />
+    </label>
+    <label>
+      <input type="checkbox" name="replace_confirmed" /> Replace existing MSDS
+    </label>
+    <button type="submit">Upload MSDS</button>
+    <p id="ingredient-msds-status"></p>
+  </form>
+  <p><a href="/ingredients">Back to ingredients</a></p>
+</section>
+{% endblock %}
