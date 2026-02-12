@@ -82,16 +82,76 @@ function parseList(value, separator = ',') {
 function attachIngredientForm() {
   const form = document.getElementById('ingredient-form');
   if (!form) return;
+  const status = document.getElementById('ingredient-form-status');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
+    const msdsFile = formData.get('msds_file');
+    formData.delete('msds_file');
     const payload = Object.fromEntries(formData.entries());
     payload.category_code = Number(payload.category_code);
     payload.pack_size_value = Number(payload.pack_size_value);
     try {
-      await postJson('/api/ingredients', payload);
+      status.textContent = 'Creating SKU...';
+      const created = await postJson('/api/ingredients', payload);
+      const sku = created?.data?.sku;
+      if (msdsFile && msdsFile.size > 0 && sku) {
+        status.textContent = 'Uploading MSDS...';
+        const uploadData = new FormData();
+        uploadData.append('file', msdsFile);
+        uploadData.append('replace_confirmed', 'true');
+        const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
+        const uploadJson = await uploadRes.json();
+        if (!uploadRes.ok || !uploadJson.ok) {
+          throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
+        }
+      }
+      status.textContent = 'Saved successfully.';
       window.location.reload();
     } catch (error) {
+      status.textContent = '';
+      alert(error.message);
+    }
+  });
+}
+
+function attachIngredientMsdsForm() {
+  const form = document.getElementById('ingredient-msds-form');
+  if (!form) return;
+  const status = document.getElementById('ingredient-msds-status');
+  const sku = form.dataset.sku;
+  const hasMsds = form.dataset.hasMsds === '1';
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const file = formData.get('msds_file');
+    const replaceChecked = formData.get('replace_confirmed') === 'on';
+
+    if (!file || file.size === 0) {
+      alert('Please select a PDF file.');
+      return;
+    }
+    if (hasMsds && !replaceChecked) {
+      alert('Please confirm replacement to overwrite existing MSDS.');
+      return;
+    }
+
+    const uploadData = new FormData();
+    uploadData.append('file', file);
+    uploadData.append('replace_confirmed', replaceChecked ? 'true' : 'false');
+
+    try {
+      status.textContent = 'Uploading...';
+      const response = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || data.detail || 'Upload failed');
+      }
+      status.textContent = 'Upload successful.';
+      window.location.href = '/ingredients';
+    } catch (error) {
+      status.textContent = '';
       alert(error.message);
     }
   });
@@ -417,6 +477,7 @@ function attachFormulationsFilterForm() {
 
 attachIngredientForm();
 attachIngredientImportForm();
+attachIngredientMsdsForm();
 attachBatchForm();
 attachBatchLookupForm();
 attachSetForm();

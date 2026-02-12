@@ -78,10 +78,10 @@ class BigQueryService:
         query = (
             f"INSERT `{self.dataset}.ingredients` "
             "(sku, category_code, seq, pack_size_value, pack_size_unit, trade_name_inci, supplier, spec_grade, "
-            "format, created_at, updated_at, created_by, updated_by, is_active, msds_object_path, msds_uploaded_at) "
+            "format, created_at, updated_at, created_by, updated_by, is_active, msds_object_path, msds_filename, msds_content_type, msds_uploaded_at) "
             "VALUES (@sku, @category_code, @seq, @pack_size_value, @pack_size_unit, @trade_name_inci, "
             "@supplier, @spec_grade, @format, @created_at, @updated_at, @created_by, @updated_by, "
-            "@is_active, @msds_object_path, @msds_uploaded_at)"
+            "@is_active, @msds_object_path, @msds_filename, @msds_content_type, @msds_uploaded_at)"
         )
         params = [
             bigquery.ScalarQueryParameter("sku", "STRING", ingredient["sku"]),
@@ -99,6 +99,8 @@ class BigQueryService:
             bigquery.ScalarQueryParameter("updated_by", "STRING", ingredient.get("updated_by")),
             bigquery.ScalarQueryParameter("is_active", "BOOL", ingredient["is_active"]),
             bigquery.ScalarQueryParameter("msds_object_path", "STRING", ingredient.get("msds_object_path")),
+            bigquery.ScalarQueryParameter("msds_filename", "STRING", ingredient.get("msds_filename")),
+            bigquery.ScalarQueryParameter("msds_content_type", "STRING", ingredient.get("msds_content_type")),
             bigquery.ScalarQueryParameter("msds_uploaded_at", "TIMESTAMP", ingredient.get("msds_uploaded_at")),
         ]
         self._run(query, params).result()
@@ -201,16 +203,20 @@ class BigQueryService:
             return dict(row)
         return None
 
-    def update_msds(self, sku: str, object_path: str) -> None:
+    def update_msds(self, sku: str, object_path: str, filename: str, content_type: str, updated_by: str | None = None) -> None:
         query = (
             f"UPDATE `{self.dataset}.ingredients` "
-            "SET msds_object_path = @object_path, msds_uploaded_at = CURRENT_TIMESTAMP(), updated_at = CURRENT_TIMESTAMP() "
+            "SET msds_object_path = @object_path, msds_filename = @filename, msds_content_type = @content_type, msds_uploaded_at = CURRENT_TIMESTAMP(), "
+            "updated_at = CURRENT_TIMESTAMP(), updated_by = @updated_by "
             "WHERE sku = @sku"
         )
         self._run(
             query,
             [
                 bigquery.ScalarQueryParameter("object_path", "STRING", object_path),
+                bigquery.ScalarQueryParameter("filename", "STRING", filename),
+                bigquery.ScalarQueryParameter("content_type", "STRING", content_type),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
                 bigquery.ScalarQueryParameter("sku", "STRING", sku),
             ],
         ).result()
