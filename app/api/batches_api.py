@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings, get_storage
 from app.models import ApiResponse, IngredientBatchCreate, UploadConfirm, UploadRequest
@@ -12,6 +14,11 @@ from app.services.storage_service import StorageService
 router = APIRouter(prefix="/api/ingredient_batches", tags=["batches"])
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+def _safe_filename(filename: str) -> str:
+    base = Path(filename).name
+    return base.replace(" ", "_")
 
 
 @router.post("", response_model=ApiResponse)
@@ -43,6 +50,8 @@ def create_batch(
             "ingredient_batch_code": payload.ingredient_batch_code,
             "received_at": received_at,
             "notes": payload.notes,
+            "quantity_value": payload.quantity_value,
+            "quantity_unit": payload.quantity_unit,
             "created_at": now,
             "updated_at": now,
             "created_by": actor.email if actor else None,
@@ -52,13 +61,54 @@ def create_batch(
             "spec_uploaded_at": None,
         }
     )
-    return ApiResponse(ok=True, data={"batch": payload.dict()})
+    return ApiResponse(ok=True, data={"batch": payload.dict(), "owner": actor.email if actor else None})
 
 
 @router.get("", response_model=ApiResponse)
 def list_batches(sku: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     rows = bigquery.list_batches(sku)
     return ApiResponse(ok=True, data={"items": rows})
+
+
+@router.post("/{sku}/{batch_code}/coa", response_model=ApiResponse)
+async def upload_coa(
+    sku: str,
+    batch_code: str,
+    file: UploadFile = File(...),
+    replace_confirmed: bool = Form(False),
+    bigquery: BigQueryService = Depends(get_bigquery),
+    storage: StorageService = Depends(get_storage),
+    settings=Depends(get_settings),
+) -> ApiResponse:
+    batch = bigquery.get_batch(sku, batch_code)
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+
+    if batch.get("spec_object_path") and not replace_confirmed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Batch already has a CoA. Confirm replacement to continue.",
+        )
+
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
+
+    content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    safe_name = _safe_filename(file.filename or "coa.pdf")
+    object_path = f"specs/{sku}/{batch_code}/{timestamp}_{uuid4().hex}_{safe_name}"
+    storage.upload_bytes(settings.bucket_specs, object_path, content, file.content_type)
+
+    previous_object_path = batch.get("spec_object_path")
+    bigquery.update_spec(sku, batch_code, object_path)
+
+    if previous_object_path and previous_object_path != object_path:
+        storage.delete_object(settings.bucket_specs, previous_object_path)
+
+    return ApiResponse(ok=True, data={"object_path": object_path, "filename": file.filename, "content_type": file.content_type})
 
 
 @router.post("/{sku}/{batch_code}/spec/upload_url", response_model=ApiResponse)

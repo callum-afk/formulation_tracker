@@ -224,9 +224,9 @@ class BigQueryService:
     def insert_batch(self, batch: Dict[str, Any]) -> None:
         query = (
             f"INSERT `{self.dataset}.ingredient_batches` "
-            "(sku, ingredient_batch_code, received_at, notes, created_at, updated_at, created_by, updated_by, "
+            "(sku, ingredient_batch_code, received_at, notes, quantity_value, quantity_unit, created_at, updated_at, created_by, updated_by, "
             "is_active, spec_object_path, spec_uploaded_at) "
-            "VALUES (@sku, @ingredient_batch_code, @received_at, @notes, @created_at, @updated_at, "
+            "VALUES (@sku, @ingredient_batch_code, @received_at, @notes, @quantity_value, @quantity_unit, @created_at, @updated_at, "
             "@created_by, @updated_by, @is_active, @spec_object_path, @spec_uploaded_at)"
         )
         params = [
@@ -234,6 +234,8 @@ class BigQueryService:
             bigquery.ScalarQueryParameter("ingredient_batch_code", "STRING", batch["ingredient_batch_code"]),
             bigquery.ScalarQueryParameter("received_at", "TIMESTAMP", batch.get("received_at")),
             bigquery.ScalarQueryParameter("notes", "STRING", batch.get("notes")),
+            bigquery.ScalarQueryParameter("quantity_value", "FLOAT64", batch.get("quantity_value")),
+            bigquery.ScalarQueryParameter("quantity_unit", "STRING", batch.get("quantity_unit")),
             bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", batch["created_at"]),
             bigquery.ScalarQueryParameter("updated_at", "TIMESTAMP", batch["updated_at"]),
             bigquery.ScalarQueryParameter("created_by", "STRING", batch.get("created_by")),

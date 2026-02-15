@@ -30,6 +30,8 @@ class IngredientBatchCreate(BaseModel):
     ingredient_batch_code: str
     received_at: Optional[str] = None
     notes: Optional[str] = None
+    quantity_value: Optional[float] = None
+    quantity_unit: Optional[str] = None
 
 
 class IngredientSetCreate(BaseModel):

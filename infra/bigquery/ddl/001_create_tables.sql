@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.ingredient_batches` (
   ingredient_batch_code STRING NOT NULL,
   received_at TIMESTAMP,
   notes STRING,
+  quantity_value FLOAT64,
+  quantity_unit STRING,
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL,
   created_by STRING,

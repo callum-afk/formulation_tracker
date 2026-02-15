@@ -1,0 +1,5 @@
+ALTER TABLE `PROJECT_ID.DATASET_ID.ingredient_batches`
+ADD COLUMN IF NOT EXISTS quantity_value FLOAT64;
+
+ALTER TABLE `PROJECT_ID.DATASET_ID.ingredient_batches`
+ADD COLUMN IF NOT EXISTS quantity_unit STRING;
