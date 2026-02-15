@@ -327,6 +327,13 @@ class BigQueryService:
         rows = self._run(query, []).result()
         return [dict(row) for row in rows]
 
+    def get_set(self, set_code: str) -> Optional[Dict[str, Any]]:
+        query = f"SELECT * FROM `{self.dataset}.v_sets` WHERE set_code = @set_code LIMIT 1"
+        rows = self._run(query, [bigquery.ScalarQueryParameter("set_code", "STRING", set_code)]).result()
+        for row in rows:
+            return dict(row)
+        return None
+
     def get_weight_by_hash(self, set_code: str, weight_hash: str) -> Optional[str]:
         query = (
             f"SELECT weight_code FROM `{self.dataset}.dry_weight_variants` "
@@ -397,6 +404,22 @@ class BigQueryService:
             [bigquery.ScalarQueryParameter("set_code", "STRING", set_code)],
         ).result()
         return [dict(row) for row in rows]
+
+    def get_weight(self, set_code: str, weight_code: str) -> Optional[Dict[str, Any]]:
+        query = (
+            f"SELECT * FROM `{self.dataset}.v_weight_variants` "
+            "WHERE set_code = @set_code AND weight_code = @weight_code LIMIT 1"
+        )
+        rows = self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("set_code", "STRING", set_code),
+                bigquery.ScalarQueryParameter("weight_code", "STRING", weight_code),
+            ],
+        ).result()
+        for row in rows:
+            return dict(row)
+        return None
 
     def get_batch_variant_by_hash(self, set_code: str, weight_code: str, batch_hash: str) -> Optional[str]:
         query = (

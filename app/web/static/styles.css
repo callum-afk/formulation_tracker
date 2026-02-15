@@ -83,3 +83,27 @@ table th, table td {
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
 }
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.app-version {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.trade-name-label {
+  white-space: nowrap;
+}
+
+#dry-weight-total.total-ok {
+  color: #166534;
+}
+
+#dry-weight-total.total-error {
+  color: #b91c1c;
+}

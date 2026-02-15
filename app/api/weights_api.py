@@ -19,7 +19,19 @@ def create_weights(
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    set_row = bigquery.get_set(payload.set_code)
+    if not set_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
+    set_skus = set(set_row.get("sku_list") or [])
+
     items = [(item.sku, round_weight(item.wt_percent)) for item in payload.items]
+    unknown_skus = [sku for sku, _ in items if sku not in set_skus]
+    if unknown_skus:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"SKU(s) not in set {payload.set_code}: {', '.join(unknown_skus)}",
+        )
+
     try:
         validate_weight_sum(items)
     except ValidationError as exc:

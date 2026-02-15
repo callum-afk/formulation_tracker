@@ -39,3 +39,11 @@ def create_set(
 def list_sets(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     rows = bigquery.list_sets()
     return ApiResponse(ok=True, data={"items": rows})
+
+
+@router.get("/{set_code}", response_model=ApiResponse)
+def get_set(set_code: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+    row = bigquery.get_set(set_code)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
+    return ApiResponse(ok=True, data=row)

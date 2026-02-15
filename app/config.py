@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import subprocess
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,26 @@ class Settings:
     code_start_weight: int
     code_start_batch: int
     auth_mode: str
+    app_version: str
+
+
+def _resolve_app_version() -> str:
+    env_version = os.getenv("APP_VERSION")
+    if env_version:
+        return env_version
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        version = result.stdout.strip()
+        if version:
+            return version
+    except Exception:
+        pass
+    return "dev"
 
 
 def _get_env(name: str) -> str:
@@ -43,4 +64,5 @@ def load_settings() -> Settings:
         code_start_weight=int(os.getenv("CODE_START_WEIGHT", "1")),
         code_start_batch=int(os.getenv("CODE_START_BATCH", "1")),
         auth_mode=auth_mode,
+        app_version=_resolve_app_version(),
     )

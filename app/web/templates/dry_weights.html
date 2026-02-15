@@ -4,9 +4,15 @@
   <h2>Create dry weight variant</h2>
   <form id="dry-weight-form">
     <label>Set code <input name="set_code" required /></label>
-    <label>Items (sku:percent, comma separated)
-      <input name="items" placeholder="SKU1:50, SKU2:50" required />
-    </label>
+    <button type="button" id="load-dry-weight-set">Load Set</button>
+    <div id="dry-weight-entry">
+      <table>
+        <tbody>
+          <tr><td>Load a set to enter dry weights.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p id="dry-weight-total"></p>
     <button type="submit">Create variant</button>
   </form>
 </section>
