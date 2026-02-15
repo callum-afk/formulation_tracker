@@ -242,6 +242,7 @@ function attachBatchForm() {
   });
 }
 
+// Wire the batch lookup form to load batches and render each batch code as a clickable detail link.
 function attachBatchLookupForm() {
   const form = document.getElementById('batch-lookup-form');
   if (!form) return;
@@ -271,7 +272,11 @@ function attachBatchLookupForm() {
       const skuCell = document.createElement('td');
       skuCell.textContent = item.sku;
       const codeCell = document.createElement('td');
-      codeCell.textContent = item.ingredient_batch_code;
+      // Make the batch code clickable so users can jump to the dedicated batch detail page.
+      const batchLink = document.createElement('a');
+      batchLink.href = `/batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}`;
+      batchLink.textContent = item.ingredient_batch_code;
+      codeCell.appendChild(batchLink);
       const receivedCell = document.createElement('td');
       receivedCell.textContent = item.received_at ? new Date(item.received_at).toLocaleString() : '';
       const notesCell = document.createElement('td');
@@ -595,13 +600,53 @@ function attachBatchVariantLookupForm() {
   });
 }
 
+// Build a readable summary text from batch item arrays for table display.
+function formatBatchItems(batchItems) {
+  if (!Array.isArray(batchItems) || batchItems.length === 0) {
+    return '—';
+  }
+  return batchItems.map((item) => `${item.sku || ''}: ${item.ingredient_batch_code || ''}`).join(', ');
+}
+
+// Build a readable summary text from dry-weight items for table display.
+function formatWeightItems(weightItems) {
+  if (!Array.isArray(weightItems) || weightItems.length === 0) {
+    return '—';
+  }
+  return weightItems.map((item) => `${item.sku || ''}: ${formatPercent(item.wt_percent)}`).join(', ');
+}
+
+// Render formulations in a stable, useful column layout instead of dumping raw object payloads.
+function renderFormulationsTable(output, items) {
+  const headers = ['Set', 'Weight', 'Batch Variant', 'Created', 'SKU Count', 'SKUs', 'Dry Weights', 'Batches'];
+  const rows = items.map((item) => [
+    item.set_code || '',
+    item.weight_code || '',
+    item.batch_variant_code || '',
+    item.created_at ? new Date(item.created_at).toLocaleString() : '',
+    item.sku_count ?? '',
+    Array.isArray(item.sku_list) ? item.sku_list.join(', ') : (item.sku_list || ''),
+    formatWeightItems(item.weight_items),
+    formatBatchItems(item.batch_items),
+  ]);
+  buildTable(output, headers, rows, 'No formulations found.');
+}
+
+// Attach formulation filtering with support for filtering by SKU membership.
 function attachFormulationsFilterForm() {
   const form = document.getElementById('formulations-filter-form');
   if (!form) return;
   const output = document.getElementById('formulations-results');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const params = new URLSearchParams(new FormData(form));
+    // Remove blank inputs to keep API query params clean and explicit.
+    const params = new URLSearchParams();
+    new FormData(form).forEach((value, key) => {
+      const trimmed = value.toString().trim();
+      if (trimmed) {
+        params.append(key, trimmed);
+      }
+    });
     const response = await fetch(`/api/formulations?${params.toString()}`);
     const data = await response.json();
     if (!data.ok) {
@@ -609,14 +654,27 @@ function attachFormulationsFilterForm() {
       return;
     }
     const items = data.data.items || [];
-    if (items.length === 0) {
-      buildTable(output, [], [], 'No formulations found.');
-      return;
-    }
-    const headers = Object.keys(items[0]);
-    const rows = items.map((item) => headers.map((header) => item[header] ?? ''));
-    buildTable(output, headers, rows, 'No formulations found.');
+    renderFormulationsTable(output, items);
   });
+}
+
+// Render formulations on the batch detail page by loading them from the batch detail API endpoint.
+function attachBatchDetailFormulations() {
+  const container = document.getElementById('batch-detail-formulations');
+  if (!container) return;
+  const sku = container.dataset.sku;
+  const batchCode = container.dataset.batchCode;
+  fetch(`/api/ingredient_batches/${encodeURIComponent(sku)}/${encodeURIComponent(batchCode)}`)
+    .then((response) => response.json())
+    .then((data) => {
+      if (!data.ok) {
+        throw new Error(data.error || 'Error loading formulations for batch');
+      }
+      renderFormulationsTable(container, data.data.formulations || []);
+    })
+    .catch((error) => {
+      buildTable(container, ['Error'], [[error.message]], '');
+    });
 }
 
 attachIngredientForm();
@@ -630,3 +688,4 @@ attachDryWeightLookupForm();
 attachBatchVariantForm();
 attachBatchVariantLookupForm();
 attachFormulationsFilterForm();
+attachBatchDetailFormulations();

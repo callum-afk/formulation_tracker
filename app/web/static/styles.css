@@ -314,6 +314,39 @@ table tbody tr:hover td {
   margin-bottom: var(--space-3);
 }
 
+
+/* Batch detail definition list uses responsive cards for readable metadata scanning. */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+/* Each detail item gets subtle panel treatment to separate key-value pairs visually. */
+.detail-grid > div {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, white 50%, var(--color-paper-100));
+}
+
+/* Detail labels are uppercased to reinforce metadata hierarchy. */
+.detail-grid dt {
+  margin: 0 0 var(--space-1);
+  color: var(--color-ink-500);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+/* Detail values preserve natural wrapping for long text such as notes and owner identifiers. */
+.detail-grid dd {
+  margin: 0;
+  word-break: break-word;
+}
+
 /* Mobile adjustments preserve density while keeping tap targets accessible. */
 @media (max-width: 720px) {
   /* Reduce panel padding and maintain readable rhythm on narrow displays. */

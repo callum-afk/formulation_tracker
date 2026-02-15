@@ -1,19 +1,28 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
+  <!-- Form-level filters now include SKU membership search for quick set discovery by ingredient code. -->
   <h2>Formulations</h2>
   <form id="formulations-filter-form" class="form-stack">
     <div class="grid">
       <label>Set code <input name="set_code" /></label>
       <label>Weight code <input name="weight_code" /></label>
       <label>Batch variant code <input name="batch_variant_code" /></label>
+      <label>Contains SKU <input name="sku" placeholder="e.g. 3_0012_25" /></label>
     </div>
     <button type="submit">Search</button>
   </form>
+  <!-- Results container is hydrated by app.js into a readable formulations table. -->
   <div id="formulations-results">
     <table>
+      <thead>
+        <tr>
+          <th>Set</th><th>Weight</th><th>Batch Variant</th><th>Created</th>
+          <th>SKU Count</th><th>SKUs</th><th>Dry Weights</th><th>Batches</th>
+        </tr>
+      </thead>
       <tbody>
-        <tr><td>No formulations loaded.</td></tr>
+        <tr><td colspan="8">No formulations loaded.</td></tr>
       </tbody>
     </table>
   </div>
