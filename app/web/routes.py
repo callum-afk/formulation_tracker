@@ -45,6 +45,24 @@ async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigq
     )
 
 
+@router.get("/batches/{sku}/{batch_code}", response_class=HTMLResponse)
+async def batch_detail(sku: str, batch_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Retrieve full batch details for the selected SKU + batch code pair.
+    batch = bigquery.get_batch(sku, batch_code)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    return templates.TemplateResponse(
+        "batch_detail.html",
+        {
+            "request": request,
+            "title": f"Batch {batch_code}",
+            "sku": sku,
+            "batch_code": batch_code,
+            "batch": batch,
+        },
+    )
+
+
 @router.get("/sets", response_class=HTMLResponse)
 async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     sets_data = bigquery.list_sets()

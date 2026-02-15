@@ -16,6 +16,7 @@ def list_formulations(
     set_code: str | None = None,
     weight_code: str | None = None,
     batch_variant_code: str | None = None,
+    sku: str | None = None,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     filters: Dict[str, str] = {}
@@ -25,5 +26,8 @@ def list_formulations(
         filters["weight_code"] = weight_code
     if batch_variant_code:
         filters["batch_variant_code"] = batch_variant_code
+    # Include optional SKU filter so users can search formulations containing a specific ingredient code.
+    if sku:
+        filters["sku"] = sku
     rows = bigquery.list_formulations(filters)
     return ApiResponse(ok=True, data={"items": rows})

@@ -502,14 +502,38 @@ class BigQueryService:
     def list_formulations(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         where = []
         params: List[bigquery.ScalarQueryParameter] = []
+        # Apply exact-match filters that map directly to formulation columns.
         for field in ("set_code", "weight_code", "batch_variant_code"):
             if field in filters:
                 where.append(f"f.{field} = @{field}")
                 params.append(bigquery.ScalarQueryParameter(field, "STRING", filters[field]))
+        # Apply a SKU containment filter by searching the JSON-encoded SKU list payload.
+        if "sku" in filters:
+            where.append("CONTAINS_SUBSTR(TO_JSON_STRING(f.sku_list), @sku)")
+            params.append(bigquery.ScalarQueryParameter("sku", "STRING", filters["sku"]))
         where_clause = f"WHERE {' AND '.join(where)}" if where else ""
         query = (
             f"SELECT f.* FROM `{self.dataset}.v_formulations_flat` f "
             f"{where_clause} ORDER BY f.created_at DESC"
         )
         rows = self._run(query, params).result()
+        return [dict(row) for row in rows]
+
+    def list_formulations_by_batch(self, sku: str, batch_code: str) -> List[Dict[str, Any]]:
+        # Find every formulation where the nested batch items include the requested SKU + batch code pair.
+        query = (
+            f"SELECT f.* FROM `{self.dataset}.v_formulations_flat` f "
+            "WHERE EXISTS ("
+            "  SELECT 1 FROM UNNEST(f.batch_items) AS batch_item "
+            "  WHERE batch_item.sku = @sku AND batch_item.ingredient_batch_code = @batch_code"
+            ") "
+            "ORDER BY f.created_at DESC"
+        )
+        rows = self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("sku", "STRING", sku),
+                bigquery.ScalarQueryParameter("batch_code", "STRING", batch_code),
+            ],
+        ).result()
         return [dict(row) for row in rows]

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- High-level batch identity for quick confirmation after clicking from lookup table. -->
+  <h2>Batch {{ batch_code }}</h2>
+  <!-- Key-value metadata block so users can audit batch details in one place. -->
+  <dl class="detail-grid">
+    <div><dt>SKU</dt><dd>{{ sku }}</dd></div>
+    <div><dt>Batch code</dt><dd>{{ batch_code }}</dd></div>
+    <div><dt>Received at</dt><dd>{{ batch.received_at or '-' }}</dd></div>
+    <div><dt>Quantity</dt><dd>{% if batch.quantity_value is not none %}{{ batch.quantity_value }} {{ batch.quantity_unit or '' }}{% else %}-{% endif %}</dd></div>
+    <div><dt>Owner</dt><dd>{{ batch.created_by or '-' }}</dd></div>
+    <div><dt>Notes</dt><dd>{{ batch.notes or '-' }}</dd></div>
+  </dl>
+</section>
+
+<section class="panel">
+  <!-- Linked formulations table surfaces all impacted formulations for traceability. -->
+  <h2>Formulations containing this batch</h2>
+  <div id="batch-detail-formulations" data-sku="{{ sku }}" data-batch-code="{{ batch_code }}">
+    <table>
+      <tbody>
+        <tr><td>Loading formulations…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

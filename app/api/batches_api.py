@@ -70,6 +70,17 @@ def list_batches(sku: str, bigquery: BigQueryService = Depends(get_bigquery)) ->
     return ApiResponse(ok=True, data={"items": rows})
 
 
+@router.get("/{sku}/{batch_code}", response_model=ApiResponse)
+def get_batch_detail(sku: str, batch_code: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+    # Load the batch record first so we can return a clear 404 for unknown batch lookups.
+    batch = bigquery.get_batch(sku, batch_code)
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    # Fetch formulations that reference this exact SKU + batch code pairing.
+    formulations = bigquery.list_formulations_by_batch(sku, batch_code)
+    return ApiResponse(ok=True, data={"batch": batch, "formulations": formulations})
+
+
 @router.post("/{sku}/{batch_code}/coa", response_model=ApiResponse)
 async def upload_coa(
     sku: str,
