@@ -94,11 +94,7 @@ function attachIngredientForm() {
     try {
       status.textContent = 'Creating SKU...';
       const created = await postJson('/api/ingredients', payload);
-      const sku =
-        created?.data?.sku ??
-        created?.data?.item?.sku ??
-        created?.data?.ingredient?.sku ??
-        created?.sku;
+      const sku = created?.sku || created?.ingredient?.sku;
       if (msdsFile && msdsFile.size > 0 && sku) {
         status.textContent = 'Uploading MSDS...';
         const uploadData = new FormData();
@@ -166,11 +162,25 @@ function attachIngredientImportForm() {
   if (!form) return;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const payload = Object.fromEntries(new FormData(form).entries());
+    const formData = new FormData(form);
+    const msdsFile = formData.get('msds_file');
+    formData.delete('msds_file');
+    const payload = Object.fromEntries(formData.entries());
     payload.category_code = Number(payload.category_code);
     payload.pack_size_value = Number(payload.pack_size_value);
     try {
-      await postJson('/api/ingredients/import', payload);
+      const created = await postJson('/api/ingredients/import', payload);
+      const sku = created?.sku || payload.sku;
+      if (msdsFile && msdsFile.size > 0 && sku) {
+        const uploadData = new FormData();
+        uploadData.append('file', msdsFile);
+        uploadData.append('replace_confirmed', 'true');
+        const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
+        const uploadJson = await uploadRes.json();
+        if (!uploadRes.ok || !uploadJson.ok) {
+          throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
+        }
+      }
       window.location.href = '/ingredients';
     } catch (error) {
       alert(error.message);
@@ -183,9 +193,33 @@ function attachBatchForm() {
   if (!form) return;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const payload = Object.fromEntries(new FormData(form).entries());
+    const formData = new FormData(form);
+    const coaFile = formData.get('coa_file');
+    formData.delete('coa_file');
+    const payload = Object.fromEntries(formData.entries());
+    if (payload.quantity_value === '') {
+      delete payload.quantity_value;
+    } else if (payload.quantity_value !== undefined) {
+      payload.quantity_value = Number(payload.quantity_value);
+    }
+    if (payload.quantity_unit === '') {
+      delete payload.quantity_unit;
+    }
     try {
       await postJson('/api/ingredient_batches', payload);
+      if (coaFile && coaFile.size > 0) {
+        const uploadData = new FormData();
+        uploadData.append('file', coaFile);
+        uploadData.append('replace_confirmed', 'true');
+        const uploadRes = await fetch(
+          `/api/ingredient_batches/${encodeURIComponent(payload.sku)}/${encodeURIComponent(payload.ingredient_batch_code)}/coa`,
+          { method: 'POST', body: uploadData }
+        );
+        const uploadJson = await uploadRes.json();
+        if (!uploadRes.ok || !uploadJson.ok) {
+          throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading CoA');
+        }
+      }
       form.reset();
       alert('Batch created');
     } catch (error) {
@@ -212,7 +246,7 @@ function attachBatchLookupForm() {
     if (items.length === 0) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 4;
+      cell.colSpan = 7;
       cell.textContent = 'No batches found.';
       row.appendChild(cell);
       output.appendChild(row);
@@ -228,10 +262,36 @@ function attachBatchLookupForm() {
       receivedCell.textContent = item.received_at ? new Date(item.received_at).toLocaleString() : '';
       const notesCell = document.createElement('td');
       notesCell.textContent = item.notes || '';
+      const quantityCell = document.createElement('td');
+      quantityCell.textContent = item.quantity_value !== null && item.quantity_value !== undefined && item.quantity_value !== '' ? `${item.quantity_value} ${item.quantity_unit || ''}`.trim() : '';
+      const ownerCell = document.createElement('td');
+      ownerCell.textContent = item.created_by || '';
+      const coaCell = document.createElement('td');
+      if (item.spec_object_path) {
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = 'CoA';
+        link.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const response = await fetch(`/api/ingredient_batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}/spec/download_url`);
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            alert(data.error || data.detail || 'Unable to load CoA');
+            return;
+          }
+          window.open(data.data.download_url, '_blank', 'noopener');
+        });
+        coaCell.appendChild(link);
+      } else {
+        coaCell.textContent = 'None';
+      }
       row.appendChild(skuCell);
       row.appendChild(codeCell);
       row.appendChild(receivedCell);
       row.appendChild(notesCell);
+      row.appendChild(quantityCell);
+      row.appendChild(ownerCell);
+      row.appendChild(coaCell);
       output.appendChild(row);
     });
   });

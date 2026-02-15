@@ -8,6 +8,11 @@
       <label>Batch code <input name="ingredient_batch_code" required /></label>
       <label>Received at <input name="received_at" type="datetime-local" /></label>
       <label>Notes <input name="notes" /></label>
+      <label>Quantity value <input name="quantity_value" type="number" min="0" step="0.01" /></label>
+      <label>Quantity unit <input name="quantity_unit" placeholder="kg, L, units..." /></label>
+      <label>Certificate of Analysis (PDF, optional)
+        <input type="file" name="coa_file" accept="application/pdf" />
+      </label>
     </div>
     <datalist id="sku-list">
       {% for item in items %}
@@ -31,10 +36,13 @@
         <th>Batch code</th>
         <th>Received at</th>
         <th>Notes</th>
+        <th>Quantity</th>
+        <th>Owner</th>
+        <th>CoA</th>
       </tr>
     </thead>
     <tbody id="batch-results">
-      <tr><td colspan="4">No batches loaded.</td></tr>
+      <tr><td colspan="7">No batches loaded.</td></tr>
     </tbody>
   </table>
 </section>
