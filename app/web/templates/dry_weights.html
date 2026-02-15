@@ -2,7 +2,7 @@
 {% block content %}
 <section class="panel">
   <h2>Create dry weight variant</h2>
-  <form id="dry-weight-form">
+  <form id="dry-weight-form" class="form-stack">
     <label>Set code <input name="set_code" required /></label>
     <button type="button" id="load-dry-weight-set">Load Set</button>
     <div id="dry-weight-entry">
@@ -19,7 +19,7 @@
 
 <section class="panel">
   <h2>Lookup variants</h2>
-  <form id="dry-weight-lookup-form">
+  <form id="dry-weight-lookup-form" class="inline-actions">
     <label>Set code <input name="set_code" required /></label>
     <button type="submit">Load</button>
   </form>

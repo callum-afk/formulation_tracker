@@ -4,7 +4,8 @@
   <h2>Edit SKU {{ ingredient.sku }}</h2>
   <p><strong>Owner:</strong> {{ ingredient.created_by or "" }}</p>
   <p><strong>Current MSDS:</strong> {% if ingredient.msds_object_path %}<a href="/ingredients/{{ ingredient.sku }}/msds">MSDS</a>{% else %}None{% endif %}</p>
-  <form id="ingredient-msds-form" data-sku="{{ ingredient.sku }}" data-has-msds="{{ '1' if ingredient.msds_object_path else '0' }}">
+  <!-- Upload form keeps existing endpoint behavior and adds shared stacked spacing. -->
+  <form id="ingredient-msds-form" class="form-stack" data-sku="{{ ingredient.sku }}" data-has-msds="{{ '1' if ingredient.msds_object_path else '0' }}">
     <label>Upload MSDS (PDF only)
       <input type="file" name="msds_file" accept="application/pdf" required />
     </label>

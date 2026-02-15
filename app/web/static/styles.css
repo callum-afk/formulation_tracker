@@ -1,109 +1,336 @@
+/* Brand tokens inspired by notpla.com: typography, colors, spacing, radii, and focus treatment. */
+:root {
+  /* Typography tokens: brand-forward heading face with safe fallbacks for body copy. */
+  --font-heading: "Fkgroteskneue", "Avenir Next", "Avenir", "Segoe UI", sans-serif;
+  --font-body: "Inter", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+
+  /* Color tokens extracted from Notpla-style palette (ink, paper, moss, and highlight). */
+  --color-ink-900: #212323;
+  --color-ink-700: #333333;
+  --color-ink-500: #535857;
+  --color-paper-100: #f2efe0;
+  --color-paper-200: #ece8d7;
+  --color-card: #f8f5e8;
+  --color-moss-300: #e7f3ac;
+  --color-moss-500: #a1a579;
+  --color-border: #d7d1bd;
+  --color-focus: #8b9b47;
+  --color-success: #2f6a3d;
+  --color-danger: #9f2f2f;
+
+  /* Spacing scale tuned for dense forms and breathable panels. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+
+  /* Elevation and shape tokens that mimic the soft rounded Notpla surfaces. */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --shadow-panel: 0 1px 0 rgba(33, 35, 35, 0.06), 0 10px 24px rgba(33, 35, 35, 0.08);
+  --shadow-hover: 0 12px 26px rgba(33, 35, 35, 0.12);
+
+  /* Sizing tokens for consistent controls and table rhythm. */
+  --max-page-width: 1200px;
+  --control-height: 2.75rem;
+  --table-row-height: 3rem;
+}
+
+/* Global reset and root body treatment to establish the Notpla-inspired canvas. */
+* {
+  box-sizing: border-box;
+}
+
+/* Base page styling and anti-aliasing for better legibility across platforms. */
 body {
-  font-family: Arial, sans-serif;
   margin: 0;
-  background: #f7f7f7;
-  color: #222;
+  background: var(--color-paper-100);
+  color: var(--color-ink-900);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* Main heading hierarchy uses the brand-forward heading typeface and tighter tracking. */
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--color-ink-900);
+}
+
+/* Section headings follow a consistent panel rhythm and size system. */
+h2 {
+  margin-bottom: var(--space-4);
+  font-size: clamp(1.25rem, 1rem + 0.9vw, 1.7rem);
+}
+
+/* Shared anchor style for readable inline links and action affordance. */
+a {
+  color: var(--color-ink-900);
+  text-decoration-color: color-mix(in srgb, var(--color-ink-900) 40%, transparent);
+  text-underline-offset: 2px;
+}
+
+/* Link hover reinforces interactivity with brand highlight tones. */
+a:hover {
+  color: var(--color-ink-700);
+  text-decoration-color: var(--color-moss-500);
+}
+
+/* Focus-visible ring for keyboard users and clear contrast on light surfaces. */
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-focus) 70%, white);
+  outline-offset: 2px;
+}
+
+/* Header shell establishes a sticky brand bar with soft contrast and rounded bottom edge. */
 .site-header {
-  background: #1f2933;
-  color: #fff;
-  padding: 1rem 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--color-paper-100) 88%, white);
+  backdrop-filter: blur(4px);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.site-header h1 {
-  margin: 0 0 0.5rem 0;
+/* Header inner container centers content and aligns title with navigation rows. */
+.header-inner {
+  width: min(var(--max-page-width), calc(100% - 2 * var(--space-4)));
+  margin: 0 auto;
+  padding: var(--space-4) 0 var(--space-3);
 }
 
-.site-header nav a {
-  color: #fff;
-  margin-right: 1rem;
+/* Top line balances title and app version metadata in a responsive arrangement. */
+.header-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* Product title mirrors Notpla's calmer editorial hero tone. */
+.site-title {
+  font-size: clamp(1.45rem, 1.1rem + 1.2vw, 2rem);
+  line-height: 1.05;
+}
+
+/* Version text remains subtle while preserving readability against the paper background. */
+.app-version {
+  color: var(--color-ink-500);
+  font-size: 0.9rem;
+}
+
+/* Navigation row wraps naturally and uses pill-shaped links for touch-friendly targets. */
+.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Navigation link tokens define compact pills with smooth hover and focus transitions. */
+.site-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0 var(--space-4);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-paper-100) 75%, white);
   text-decoration: none;
+  font-weight: 500;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
-.inci-link {
-  color: #2563eb;
-  text-decoration: none;
+/* Navigation hover behavior mimics Notpla's soft moss highlight accents. */
+.site-nav a:hover {
+  background: var(--color-moss-300);
+  border-color: color-mix(in srgb, var(--color-moss-500) 55%, var(--color-border));
+  transform: translateY(-1px);
 }
 
-.inci-link:hover {
-  color: #1d4ed8;
-  text-decoration: underline;
-}
-
+/* Main content container keeps consistent margins and fluid width. */
 main {
-  padding: 2rem;
+  width: min(var(--max-page-width), calc(100% - 2 * var(--space-4)));
+  margin: var(--space-6) auto;
 }
 
+/* Panels become card surfaces with rounded corners, quiet borders, and controlled elevation. */
 .panel {
-  background: #fff;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, var(--color-card) 0%, var(--color-paper-100) 100%);
+  box-shadow: var(--shadow-panel);
 }
 
+/* Grid layout for forms supports responsive columns while preserving input readability. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
 }
 
+/* Labels are structured as compact stacks with clear weight and spacing. */
 label {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--space-2);
+  color: var(--color-ink-900);
+  font-size: 0.92rem;
+  font-weight: 600;
 }
 
-input, select, button {
-  padding: 0.5rem;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+/* Inputs and selects share a common treatment for borders, radius, and interaction states. */
+input,
+select,
+button,
+textarea {
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: white;
+  color: var(--color-ink-900);
+  font: inherit;
 }
 
+/* File input gets slightly denser vertical padding to align with native browser controls. */
+input[type="file"] {
+  padding: var(--space-2);
+}
+
+/* Form controls subtly intensify border contrast on hover and active interactions. */
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: color-mix(in srgb, var(--color-moss-500) 40%, var(--color-border));
+}
+
+/* Unified focus state on interactive controls reinforces accessibility and brand consistency. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus) 30%, transparent);
+}
+
+/* Buttons receive moss-forward call-to-action styling with clear hover/active feedback. */
 button {
-  background: #2563eb;
-  color: #fff;
-  border: none;
+  border-color: var(--color-ink-900);
+  background: var(--color-ink-900);
+  color: var(--color-paper-100);
+  font-family: var(--font-heading);
+  font-weight: 500;
+  letter-spacing: 0.01em;
   cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Button hover shifts toward olive highlight to echo the reference site's accents. */
 button:hover {
-  background: #1d4ed8;
+  background: color-mix(in srgb, var(--color-ink-900) 78%, var(--color-moss-500));
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
 }
 
+/* Tables are wrapped for mobile overflow and given subtle card-compatible row styling. */
 table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.95rem;
 }
 
-table th, table td {
-  padding: 0.5rem;
-  border-bottom: 1px solid #e2e8f0;
+/* Table headers use uppercase micro-labels for scannability and hierarchy. */
+table th {
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-ink-500);
+}
+
+/* Table data cells maintain generous row height and neutral separators. */
+table td {
+  min-height: var(--table-row-height);
+  padding: var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 72%, white);
   text-align: left;
 }
 
-.header-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
+/* Row hover adds a faint highlight to improve legibility during comparison tasks. */
+table tbody tr:hover td {
+  background: color-mix(in srgb, var(--color-moss-300) 24%, white);
 }
 
-.app-version {
-  font-size: 0.9rem;
-  opacity: 0.9;
+/* INCI link styling is specialized to preserve visual distinction inside dense labels. */
+.inci-link {
+  color: var(--color-ink-900);
+  font-weight: 500;
 }
 
-.trade-name-label {
-  white-space: nowrap;
-}
-
+/* Status colors for dry weight validation remain high contrast on paper backgrounds. */
 #dry-weight-total.total-ok {
-  color: #166534;
+  color: var(--color-success);
+  font-weight: 700;
 }
 
+/* Error status style ensures alerts stand out while matching the palette system. */
 #dry-weight-total.total-error {
-  color: #b91c1c;
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+/* Utility spacing for compact stacked forms and action groups across templates. */
+.form-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* Small-action row aligns filter controls and clear links in a readable layout. */
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* Mobile adjustments preserve density while keeping tap targets accessible. */
+@media (max-width: 720px) {
+  /* Reduce panel padding and maintain readable rhythm on narrow displays. */
+  .panel {
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+  }
+
+  /* Let header metadata wrap naturally on small viewports. */
+  .header-top {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: var(--space-2);
+  }
+
+  /* Slightly reduce nav link padding to avoid horizontal crowding on phones. */
+  .site-nav a {
+    padding: 0 var(--space-3);
+  }
 }

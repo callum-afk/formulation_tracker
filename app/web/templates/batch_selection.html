@@ -2,7 +2,7 @@
 {% block content %}
 <section class="panel">
   <h2>Create batch variant</h2>
-  <form id="batch-variant-form">
+  <form id="batch-variant-form" class="form-stack">
     <label>Set code <input name="set_code" required /></label>
     <label>Weight code <input name="weight_code" required /></label>
     <button type="button" id="load-batch-items">Load Set</button>
@@ -19,7 +19,7 @@
 
 <section class="panel">
   <h2>Lookup variants</h2>
-  <form id="batch-variant-lookup-form">
+  <form id="batch-variant-lookup-form" class="inline-actions">
     <label>Set code <input name="set_code" required /></label>
     <label>Weight code <input name="weight_code" required /></label>
     <button type="submit">Load</button>

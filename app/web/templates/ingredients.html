@@ -43,7 +43,8 @@
 
 <section class="panel">
   <h2>Ingredients</h2>
-  <form method="get" action="/ingredients" style="margin-bottom: 12px;">
+  <!-- Inline actions group keeps filter controls aligned and responsive. -->
+  <form method="get" action="/ingredients" class="inline-actions">
     <label>Lookup SKU / ingredient
       <input type="text" name="q" value="{{ q }}" placeholder="Search SKU, trade name, supplier" />
     </label>
