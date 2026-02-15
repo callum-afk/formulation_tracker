@@ -8,7 +8,10 @@
 </head>
 <body>
   <header class="site-header">
-    <h1>Formulation Tracker</h1>
+    <div class="header-top">
+      <h1>Formulation Tracker</h1>
+      <span class="app-version">Version {{ request.app.state.settings.app_version }}</span>
+    </div>
     <nav>
       <a href="/ingredients">Ingredients</a>
       <a href="/ingredient_import">Import</a>

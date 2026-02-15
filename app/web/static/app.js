@@ -11,6 +11,20 @@ async function postJson(url, payload) {
   return data.data;
 }
 
+async function fetchJson(url) {
+  const response = await fetch(url);
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || data.detail || response.statusText);
+  }
+  return data.data;
+}
+
+async function fetchSetSkus(setCode) {
+  const data = await fetchJson(`/api/sets/${encodeURIComponent(setCode)}`);
+  return data.sku_list || [];
+}
+
 function clearElement(element) {
   while (element.firstChild) {
     element.removeChild(element.firstChild);
@@ -329,18 +343,84 @@ function attachSetForm() {
 function attachDryWeightForm() {
   const form = document.getElementById('dry-weight-form');
   if (!form) return;
+  const loadButton = document.getElementById('load-dry-weight-set');
+  const entryContainer = document.getElementById('dry-weight-entry');
+  const totalOutput = document.getElementById('dry-weight-total');
+
+  function renderSetTable(skus) {
+    if (skus.length === 0) {
+      buildTable(entryContainer, ['SKU'], [], 'No SKUs found for this set.');
+      totalOutput.textContent = '';
+      return;
+    }
+    const inputRow = skus.map((sku) => {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = '100';
+      input.step = '0.01';
+      input.required = true;
+      input.dataset.sku = sku;
+      input.className = 'dry-weight-input';
+      input.addEventListener('input', updateTotal);
+      return input;
+    });
+    buildTable(entryContainer, skus, [inputRow], 'No SKUs found for this set.');
+    updateTotal();
+  }
+
+  function updateTotal() {
+    const inputs = Array.from(entryContainer.querySelectorAll('input.dry-weight-input'));
+    const total = inputs.reduce((sum, input) => sum + Number(input.value || 0), 0);
+    totalOutput.textContent = `Total: ${total.toFixed(2)}%`;
+    totalOutput.className = Math.abs(total - 100) < 0.00001 ? 'total-ok' : 'total-error';
+  }
+
+  async function loadSet() {
+    const setCode = new FormData(form).get('set_code')?.toString().trim();
+    if (!setCode) {
+      alert('Enter a set code to load SKUs.');
+      return;
+    }
+    const skus = await fetchSetSkus(setCode);
+    renderSetTable(skus);
+  }
+
+  if (loadButton) {
+    loadButton.addEventListener('click', () => {
+      loadSet().catch((error) => {
+        alert(error.message || 'Error loading set');
+      });
+    });
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const formData = new FormData(form);
-    const setCode = formData.get('set_code');
-    const itemsRaw = parseList(formData.get('items'));
-    const items = itemsRaw.map((entry) => {
-      const [sku, percent] = entry.split(':').map((item) => item.trim());
-      return { sku, wt_percent: Number(percent) };
-    });
+    const setCode = new FormData(form).get('set_code')?.toString().trim();
+    const inputs = Array.from(entryContainer.querySelectorAll('input.dry-weight-input'));
+    if (!setCode || inputs.length === 0) {
+      alert('Load a set before creating a variant.');
+      return;
+    }
+    const items = [];
+    for (const input of inputs) {
+      if (input.value === '') {
+        alert('Enter a dry weight for each SKU.');
+        return;
+      }
+      const rounded = Number(Number(input.value).toFixed(2));
+      items.push({ sku: input.dataset.sku, wt_percent: rounded });
+    }
+    const total = items.reduce((sum, item) => sum + item.wt_percent, 0);
+    if (Math.abs(total - 100) > 0.00001) {
+      alert('Dry weights must add up to exactly 100.00%.');
+      return;
+    }
     try {
       await postJson('/api/dry_weights', { set_code: setCode, items });
       form.reset();
+      buildTable(entryContainer, ['SKU'], [], 'Load a set to enter dry weights.');
+      totalOutput.textContent = '';
       alert('Dry weight variant created');
     } catch (error) {
       alert(error.message);
@@ -394,7 +474,7 @@ function attachBatchVariantForm() {
     const setCode = formData.get('set_code');
     const weightCode = formData.get('weight_code');
     if (!setCode || !weightCode) {
-      alert('Enter a set code and weight code to load SKUs.');
+      alert('Enter a set code and weight code to load a set.');
       return;
     }
     const weightsResponse = await fetch(`/api/dry_weights?set_code=${encodeURIComponent(setCode)}`);
@@ -452,7 +532,7 @@ function attachBatchVariantForm() {
     const weightCode = formData.get('weight_code');
     const selects = Array.from(itemsContainer.querySelectorAll('select[data-sku]'));
     if (selects.length === 0) {
-      alert('Load SKUs before creating a variant.');
+      alert('Load set items before creating a variant.');
       return;
     }
     const items = [];
