@@ -94,7 +94,11 @@ function attachIngredientForm() {
     try {
       status.textContent = 'Creating SKU...';
       const created = await postJson('/api/ingredients', payload);
-      const sku = created?.data?.sku;
+      const sku =
+        created?.data?.sku ??
+        created?.data?.item?.sku ??
+        created?.data?.ingredient?.sku ??
+        created?.sku;
       if (msdsFile && msdsFile.size > 0 && sku) {
         status.textContent = 'Uploading MSDS...';
         const uploadData = new FormData();
