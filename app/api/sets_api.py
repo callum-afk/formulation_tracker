@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings
 from app.models import ApiResponse, IngredientSetCreate
@@ -18,6 +18,7 @@ def create_set(
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Validate every supplied SKU before creating the deduplicated set hash.
     missing_skus = [sku for sku in payload.skus if not bigquery.get_ingredient(sku)]
     if missing_skus:
         raise HTTPException(
@@ -29,6 +30,7 @@ def create_set(
     if existing:
         return ApiResponse(ok=True, data={"set_code": existing, "skus": payload.skus})
 
+    # Allocate the next user-facing code and persist both parent and item rows.
     next_value = bigquery.allocate_counter("set_code", "", settings.code_start_set)
     set_code = int_to_code(next_value)
     bigquery.insert_set(set_code, set_hash, payload.skus, actor.email if actor else None)
@@ -36,9 +38,15 @@ def create_set(
 
 
 @router.get("", response_model=ApiResponse)
-def list_sets(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
-    rows = bigquery.list_sets()
-    return ApiResponse(ok=True, data={"items": rows})
+def list_sets(
+    q: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> ApiResponse:
+    # Return paged set data so the table scales cleanly to 100+ rows.
+    rows, total = bigquery.list_sets_paginated(search=q.strip() if q else None, page=page, page_size=page_size)
+    return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
 
 
 @router.get("/{set_code}", response_model=ApiResponse)

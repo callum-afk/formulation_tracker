@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings, get_storage
 from app.models import ApiResponse, IngredientBatchCreate, UploadConfirm, UploadRequest
@@ -65,9 +65,21 @@ def create_batch(
 
 
 @router.get("", response_model=ApiResponse)
-def list_batches(sku: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
-    rows = bigquery.list_batches(sku)
-    return ApiResponse(ok=True, data={"items": rows})
+def list_batches(
+    sku: str | None = None,
+    batch_code: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> ApiResponse:
+    # Support all-batch listing with optional SKU and batch-code filters for scalable lookup workflows.
+    rows, total = bigquery.list_batches_paginated(
+        sku=sku.strip() if sku else None,
+        batch_code=batch_code.strip() if batch_code else None,
+        page=page,
+        page_size=page_size,
+    )
+    return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
 
 
 @router.get("/{sku}/{batch_code}", response_model=ApiResponse)
