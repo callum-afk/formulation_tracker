@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class ApiResponse(BaseModel):
@@ -44,8 +44,17 @@ class DryWeightItem(BaseModel):
 
 
 class DryWeightCreate(BaseModel):
+    # Enforce two-letter uppercase set codes to keep code formats consistent across UI and API.
     set_code: str
     items: List[DryWeightItem]
+
+    @validator("set_code", pre=True)
+    def normalize_set_code(cls, value: str) -> str:
+        # Normalize user-entered lowercase codes and reject invalid non-two-letter formats.
+        code = (value or "").strip().upper()
+        if len(code) != 2 or not code.isalpha():
+            raise ValueError("set_code must be exactly two letters (A-Z)")
+        return code
 
 
 class BatchVariantItem(BaseModel):
@@ -54,9 +63,18 @@ class BatchVariantItem(BaseModel):
 
 
 class BatchVariantCreate(BaseModel):
+    # Enforce two-letter uppercase set and weight codes for batch variant API payloads.
     set_code: str
     weight_code: str
     items: List[BatchVariantItem]
+
+    @validator("set_code", "weight_code", pre=True)
+    def normalize_two_letter_codes(cls, value: str) -> str:
+        # Normalize to uppercase and block anything that is not exactly two alphabetic characters.
+        code = (value or "").strip().upper()
+        if len(code) != 2 or not code.isalpha():
+            raise ValueError("codes must be exactly two letters (A-Z)")
+        return code
 
 
 class UploadRequest(BaseModel):

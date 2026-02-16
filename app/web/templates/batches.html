@@ -26,7 +26,8 @@
 <section class="panel">
   <h2>Lookup batches</h2>
   <form id="batch-lookup-form" class="inline-actions">
-    <label>SKU <input name="sku" list="sku-list" required /></label>
+    <label>SKU <input name="sku" list="sku-list" /></label>
+    <label>Batch code <input name="batch_code" placeholder="e.g. AB" /></label>
     <button type="submit">Load</button>
   </form>
   <table>
@@ -45,5 +46,10 @@
       <tr><td colspan="7">No batches loaded.</td></tr>
     </tbody>
   </table>
+  <div class="inline-actions" id="batches-pagination">
+    <button type="button" id="batches-prev-page">Previous</button>
+    <span id="batches-page-label">Page 1</span>
+    <button type="button" id="batches-next-page">Next</button>
+  </div>
 </section>
 {% endblock %}

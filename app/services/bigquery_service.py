@@ -247,12 +247,54 @@ class BigQueryService:
         self._run(query, params).result()
 
     def list_batches(self, sku: str) -> List[Dict[str, Any]]:
+        # Keep the legacy SKU-specific listing helper for endpoints that need exact SKU scope.
         query = (
             f"SELECT * FROM `{self.dataset}.ingredient_batches` "
             "WHERE sku = @sku ORDER BY ingredient_batch_code"
         )
         rows = self._run(query, [bigquery.ScalarQueryParameter("sku", "STRING", sku)]).result()
         return [dict(row) for row in rows]
+
+    def list_batches_paginated(
+        self,
+        sku: Optional[str],
+        batch_code: Optional[str],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        # Build dynamic filter clauses so the same query can support all/sku/batch lookup combinations.
+        where: List[str] = []
+        params: List[bigquery.ScalarQueryParameter] = []
+        if sku:
+            where.append("sku = @sku")
+            params.append(bigquery.ScalarQueryParameter("sku", "STRING", sku))
+        if batch_code:
+            where.append("ingredient_batch_code = @batch_code")
+            params.append(bigquery.ScalarQueryParameter("batch_code", "STRING", batch_code))
+
+        # Assemble the WHERE clause only when one or more optional filters are provided.
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+        offset = max(page - 1, 0) * page_size
+
+        # Count first so the UI can render correct total pages for the current filter set.
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.ingredient_batches` {where_clause}"
+        total_rows = list(self._run(count_query, params).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+
+        # Return oldest-to-newest records and add deterministic tie-breakers for stable pagination.
+        data_query = (
+            f"SELECT * FROM `{self.dataset}.ingredient_batches` "
+            f"{where_clause} "
+            "ORDER BY created_at ASC, sku ASC, ingredient_batch_code ASC "
+            "LIMIT @limit OFFSET @offset"
+        )
+        data_params = [
+            *params,
+            bigquery.ScalarQueryParameter("limit", "INT64", page_size),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        rows = self._run(data_query, data_params).result()
+        return [dict(row) for row in rows], total
 
     def get_batch(self, sku: str, batch_code: str) -> Optional[Dict[str, Any]]:
         query = (
@@ -322,7 +364,43 @@ class BigQueryService:
                 ],
             ).result()
 
+    def list_sets_paginated(self, search: Optional[str], page: int, page_size: int) -> Tuple[List[Dict[str, Any]], int]:
+        # Support set lookup by set code or contained SKU while keeping a single source of query truth.
+        where: List[str] = []
+        params: List[bigquery.ScalarQueryParameter] = []
+        if search:
+            where.append(
+                "(CONTAINS_SUBSTR(set_code, @search) "
+                "OR EXISTS (SELECT 1 FROM UNNEST(sku_list) AS sku WHERE CONTAINS_SUBSTR(sku, @search)))"
+            )
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", search))
+
+        # Apply optional filtering and compute the offset for 1-indexed page navigation.
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+        offset = max(page - 1, 0) * page_size
+
+        # Count rows for pagination controls so the frontend can show page totals accurately.
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.v_sets` {where_clause}"
+        total_rows = list(self._run(count_query, params).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+
+        # Default ordering is oldest-to-newest, with set_code as a deterministic tie-breaker.
+        data_query = (
+            f"SELECT * FROM `{self.dataset}.v_sets` "
+            f"{where_clause} "
+            "ORDER BY created_at ASC, set_code ASC "
+            "LIMIT @limit OFFSET @offset"
+        )
+        data_params = [
+            *params,
+            bigquery.ScalarQueryParameter("limit", "INT64", page_size),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        rows = self._run(data_query, data_params).result()
+        return [dict(row) for row in rows], total
+
     def list_sets(self) -> List[Dict[str, Any]]:
+        # Preserve existing method behavior for any legacy callers that still require a full set list.
         query = f"SELECT * FROM `{self.dataset}.v_sets` ORDER BY set_code"
         rows = self._run(query, []).result()
         return [dict(row) for row in rows]
@@ -499,7 +577,12 @@ class BigQueryService:
         ).result()
         return [dict(row) for row in rows]
 
-    def list_formulations(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def list_formulations_paginated(
+        self,
+        filters: Dict[str, Any],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
         where = []
         params: List[bigquery.ScalarQueryParameter] = []
         # Apply exact-match filters that map directly to formulation columns.
@@ -512,12 +595,31 @@ class BigQueryService:
             where.append("CONTAINS_SUBSTR(TO_JSON_STRING(f.sku_list), @sku)")
             params.append(bigquery.ScalarQueryParameter("sku", "STRING", filters["sku"]))
         where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+        # Build a count query for accurate page controls under all active filter combinations.
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.v_formulations_flat` f {where_clause}"
+        total_rows = list(self._run(count_query, params).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+
+        # Keep newest-to-oldest sort and include extra tie-breakers so paging is deterministic.
         query = (
             f"SELECT f.* FROM `{self.dataset}.v_formulations_flat` f "
-            f"{where_clause} ORDER BY f.created_at DESC"
+            f"{where_clause} "
+            "ORDER BY f.created_at DESC, f.set_code DESC, f.weight_code DESC, f.batch_variant_code DESC "
+            "LIMIT @limit OFFSET @offset"
         )
-        rows = self._run(query, params).result()
-        return [dict(row) for row in rows]
+        offset = max(page - 1, 0) * page_size
+        data_params = [
+            *params,
+            bigquery.ScalarQueryParameter("limit", "INT64", page_size),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        rows = self._run(query, data_params).result()
+        return [dict(row) for row in rows], total
+
+    def list_formulations(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        # Preserve pre-pagination method for backward compatibility.
+        rows, _ = self.list_formulations_paginated(filters=filters, page=1, page_size=1000)
+        return rows
 
     def list_formulations_by_batch(self, sku: str, batch_code: str) -> List[Dict[str, Any]]:
         # Find every formulation where the nested batch items include the requested SKU + batch code pair.

@@ -93,6 +93,30 @@ function parseList(value, separator = ',') {
     .filter(Boolean);
 }
 
+// Normalize two-letter code input values (e.g. "ab" -> "AB") and validate strict A-Z format.
+function normalizeTwoLetterCode(rawValue) {
+  const normalized = (rawValue || '').toString().trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalized)) {
+    throw new Error('Code must be exactly two letters (A-Z).');
+  }
+  return normalized;
+}
+
+// Build generic prev/next pagination wiring with page labels and disabled state handling.
+function updatePagerControls({ prevButton, nextButton, label, page, total, pageSize }) {
+  const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
+  if (label) {
+    label.textContent = `Page ${page} of ${totalPages}`;
+  }
+  if (prevButton) {
+    prevButton.disabled = page <= 1;
+  }
+  if (nextButton) {
+    nextButton.disabled = page >= totalPages;
+  }
+  return totalPages;
+}
+
 function attachIngredientForm() {
   const form = document.getElementById('ingredient-form');
   if (!form) return;
@@ -243,21 +267,44 @@ function attachBatchForm() {
 }
 
 // Wire the batch lookup form to load batches and render each batch code as a clickable detail link.
+
 function attachBatchLookupForm() {
   const form = document.getElementById('batch-lookup-form');
   if (!form) return;
   const output = document.getElementById('batch-results');
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const sku = new FormData(form).get('sku');
-    const response = await fetch(`/api/ingredient_batches?sku=${encodeURIComponent(sku)}`);
+  const prevButton = document.getElementById('batches-prev-page');
+  const nextButton = document.getElementById('batches-next-page');
+  const pageLabel = document.getElementById('batches-page-label');
+  const pageSize = 10;
+  let page = 1;
+  let lastTotal = 0;
+
+  // Load paginated batches for current filters and render rows into the table body.
+  async function loadBatches(targetPage) {
+    const formData = new FormData(form);
+    const params = new URLSearchParams();
+    const sku = (formData.get('sku') || '').toString().trim();
+    const batchCode = (formData.get('batch_code') || '').toString().trim();
+    if (sku) {
+      params.set('sku', sku);
+    }
+    if (batchCode) {
+      params.set('batch_code', batchCode);
+    }
+    params.set('page', String(targetPage));
+    params.set('page_size', String(pageSize));
+
+    const response = await fetch(`/api/ingredient_batches?${params.toString()}`);
     const data = await response.json();
     if (!data.ok) {
-      alert(data.error || 'Error loading batches');
-      return;
+      throw new Error(data.error || 'Error loading batches');
     }
+
     const items = data.data.items || [];
+    page = Number(data.data.page || targetPage);
+    lastTotal = Number(data.data.total || 0);
     clearElement(output);
+
     if (items.length === 0) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
@@ -265,54 +312,94 @@ function attachBatchLookupForm() {
       cell.textContent = 'No batches found.';
       row.appendChild(cell);
       output.appendChild(row);
-      return;
+    } else {
+      items.forEach((item) => {
+        const row = document.createElement('tr');
+        const skuCell = document.createElement('td');
+        skuCell.textContent = item.sku;
+        const codeCell = document.createElement('td');
+        const batchLink = document.createElement('a');
+        batchLink.href = `/batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}`;
+        batchLink.textContent = item.ingredient_batch_code;
+        codeCell.appendChild(batchLink);
+        const receivedCell = document.createElement('td');
+        receivedCell.textContent = item.received_at ? new Date(item.received_at).toLocaleString() : '';
+        const notesCell = document.createElement('td');
+        notesCell.textContent = item.notes || '';
+        const quantityCell = document.createElement('td');
+        quantityCell.textContent = item.quantity_value !== null && item.quantity_value !== undefined && item.quantity_value !== '' ? `${item.quantity_value} ${item.quantity_unit || ''}`.trim() : '';
+        const ownerCell = document.createElement('td');
+        ownerCell.textContent = item.created_by || '';
+        const coaCell = document.createElement('td');
+        if (item.spec_object_path) {
+          const link = document.createElement('a');
+          link.href = '#';
+          link.textContent = 'CoA';
+          link.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const response = await fetch(`/api/ingredient_batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}/spec/download_url`);
+            const specData = await response.json();
+            if (!response.ok || !specData.ok) {
+              alert(specData.error || specData.detail || 'Unable to load CoA');
+              return;
+            }
+            window.open(specData.data.download_url, '_blank', 'noopener');
+          });
+          coaCell.appendChild(link);
+        } else {
+          coaCell.textContent = 'None';
+        }
+        row.appendChild(skuCell);
+        row.appendChild(codeCell);
+        row.appendChild(receivedCell);
+        row.appendChild(notesCell);
+        row.appendChild(quantityCell);
+        row.appendChild(ownerCell);
+        row.appendChild(coaCell);
+        output.appendChild(row);
+      });
     }
-    items.forEach((item) => {
-      const row = document.createElement('tr');
-      const skuCell = document.createElement('td');
-      skuCell.textContent = item.sku;
-      const codeCell = document.createElement('td');
-      // Make the batch code clickable so users can jump to the dedicated batch detail page.
-      const batchLink = document.createElement('a');
-      batchLink.href = `/batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}`;
-      batchLink.textContent = item.ingredient_batch_code;
-      codeCell.appendChild(batchLink);
-      const receivedCell = document.createElement('td');
-      receivedCell.textContent = item.received_at ? new Date(item.received_at).toLocaleString() : '';
-      const notesCell = document.createElement('td');
-      notesCell.textContent = item.notes || '';
-      const quantityCell = document.createElement('td');
-      quantityCell.textContent = item.quantity_value !== null && item.quantity_value !== undefined && item.quantity_value !== '' ? `${item.quantity_value} ${item.quantity_unit || ''}`.trim() : '';
-      const ownerCell = document.createElement('td');
-      ownerCell.textContent = item.created_by || '';
-      const coaCell = document.createElement('td');
-      if (item.spec_object_path) {
-        const link = document.createElement('a');
-        link.href = '#';
-        link.textContent = 'CoA';
-        link.addEventListener('click', async (e) => {
-          e.preventDefault();
-          const response = await fetch(`/api/ingredient_batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}/spec/download_url`);
-          const data = await response.json();
-          if (!response.ok || !data.ok) {
-            alert(data.error || data.detail || 'Unable to load CoA');
-            return;
-          }
-          window.open(data.data.download_url, '_blank', 'noopener');
-        });
-        coaCell.appendChild(link);
-      } else {
-        coaCell.textContent = 'None';
-      }
-      row.appendChild(skuCell);
-      row.appendChild(codeCell);
-      row.appendChild(receivedCell);
-      row.appendChild(notesCell);
-      row.appendChild(quantityCell);
-      row.appendChild(ownerCell);
-      row.appendChild(coaCell);
-      output.appendChild(row);
+
+    updatePagerControls({
+      prevButton,
+      nextButton,
+      label: pageLabel,
+      page,
+      total: lastTotal,
+      pageSize,
     });
+  }
+
+  // Start from page 1 whenever the user submits new filter values.
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await loadBatches(1);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  // Wire previous-page navigation while preserving active filter values from the form.
+  if (prevButton) {
+    prevButton.addEventListener('click', () => {
+      if (page <= 1) return;
+      loadBatches(page - 1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Wire next-page navigation while preserving active filter values from the form.
+  if (nextButton) {
+    nextButton.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(lastTotal / pageSize));
+      if (page >= totalPages) return;
+      loadBatches(page + 1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Load the initial all-batches page on first render for immediate visibility.
+  loadBatches(1).catch((error) => {
+    alert(error.message);
   });
 }
 
@@ -322,12 +409,24 @@ function attachSetForm() {
   const addButton = document.getElementById('add-sku-select');
   const selectsContainer = document.getElementById('sku-selects');
   const template = document.getElementById('sku-select-template');
+  const filterForm = document.getElementById('sets-filter-form');
+  const output = document.getElementById('sets-results');
+  const prevButton = document.getElementById('sets-prev-page');
+  const nextButton = document.getElementById('sets-next-page');
+  const pageLabel = document.getElementById('sets-page-label');
+  const pageSize = 10;
+  let page = 1;
+  let lastTotal = 0;
+
+  // Keep dynamic SKU field growth so users can include more than the six default selectors.
   if (addButton && selectsContainer && template) {
     addButton.addEventListener('click', () => {
       const fragment = template.content.cloneNode(true);
       selectsContainer.appendChild(fragment);
     });
   }
+
+  // Submit set creation payload after collecting all non-empty selected SKU values.
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const selects = Array.from(form.querySelectorAll('select[name="skus"]'));
@@ -338,13 +437,92 @@ function attachSetForm() {
     }
     try {
       await postJson('/api/sets', { skus });
-      window.location.reload();
+      await loadSets(1);
     } catch (error) {
       alert(error.message);
     }
   });
-}
 
+  // Render the paged set list with owner and created timestamp columns.
+  async function loadSets(targetPage) {
+    const params = new URLSearchParams();
+    const q = filterForm ? (new FormData(filterForm).get('q') || '').toString().trim() : '';
+    if (q) {
+      params.set('q', q);
+    }
+    params.set('page', String(targetPage));
+    params.set('page_size', String(pageSize));
+
+    const response = await fetch(`/api/sets?${params.toString()}`);
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || data.detail || 'Error loading sets');
+    }
+
+    const items = data.data.items || [];
+    page = Number(data.data.page || targetPage);
+    lastTotal = Number(data.data.total || 0);
+    clearElement(output);
+
+    if (items.length === 0) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = 'No sets found.';
+      row.appendChild(cell);
+      output.appendChild(row);
+    } else {
+      items.forEach((item) => {
+        const row = document.createElement('tr');
+        const setCodeCell = document.createElement('td');
+        setCodeCell.textContent = item.set_code || '';
+        const ownerCell = document.createElement('td');
+        ownerCell.textContent = item.created_by || '';
+        const createdCell = document.createElement('td');
+        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        const skusCell = document.createElement('td');
+        skusCell.textContent = Array.isArray(item.sku_list) ? item.sku_list.join(', ') : '';
+        row.appendChild(setCodeCell);
+        row.appendChild(ownerCell);
+        row.appendChild(createdCell);
+        row.appendChild(skusCell);
+        output.appendChild(row);
+      });
+    }
+
+    updatePagerControls({ prevButton, nextButton, label: pageLabel, page, total: lastTotal, pageSize });
+  }
+
+  // Restart pagination when search filters are changed and submitted.
+  if (filterForm) {
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loadSets(1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Step backward through set result pages while keeping search query state.
+  if (prevButton) {
+    prevButton.addEventListener('click', () => {
+      if (page <= 1) return;
+      loadSets(page - 1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Step forward through set result pages while keeping search query state.
+  if (nextButton) {
+    nextButton.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(lastTotal / pageSize));
+      if (page >= totalPages) return;
+      loadSets(page + 1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Load the first page immediately so existing sets are always visible by default.
+  loadSets(1).catch((error) => {
+    alert(error.message);
+  });
+}
 function attachDryWeightForm() {
   const form = document.getElementById('dry-weight-form');
   if (!form) return;
@@ -476,8 +654,16 @@ function attachBatchVariantForm() {
 
   async function loadBatchItems() {
     const formData = new FormData(form);
-    const setCode = formData.get('set_code');
-    const weightCode = formData.get('weight_code');
+    let setCode;
+    let weightCode;
+    try {
+      // Normalize lowercase entry to uppercase and enforce strict two-letter code format.
+      setCode = normalizeTwoLetterCode(formData.get('set_code'));
+      weightCode = normalizeTwoLetterCode(formData.get('weight_code'));
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     if (!setCode || !weightCode) {
       alert('Enter a set code and weight code to load a set.');
       return;
@@ -533,8 +719,16 @@ function attachBatchVariantForm() {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
-    const setCode = formData.get('set_code');
-    const weightCode = formData.get('weight_code');
+    let setCode;
+    let weightCode;
+    try {
+      // Normalize lowercase entry to uppercase and enforce strict two-letter code format.
+      setCode = normalizeTwoLetterCode(formData.get('set_code'));
+      weightCode = normalizeTwoLetterCode(formData.get('weight_code'));
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     const selects = Array.from(itemsContainer.querySelectorAll('select[data-sku]'));
     if (selects.length === 0) {
       alert('Load set items before creating a variant.');
@@ -567,8 +761,16 @@ function attachBatchVariantLookupForm() {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
-    const setCode = formData.get('set_code');
-    const weightCode = formData.get('weight_code');
+    let setCode;
+    let weightCode;
+    try {
+      // Normalize lowercase entry to uppercase and enforce strict two-letter code format.
+      setCode = normalizeTwoLetterCode(formData.get('set_code'));
+      weightCode = normalizeTwoLetterCode(formData.get('weight_code'));
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     const response = await fetch(
       `/api/batch_variants?set_code=${encodeURIComponent(setCode)}&weight_code=${encodeURIComponent(weightCode)}`
     );
@@ -633,13 +835,20 @@ function renderFormulationsTable(output, items) {
 }
 
 // Attach formulation filtering with support for filtering by SKU membership.
+
 function attachFormulationsFilterForm() {
   const form = document.getElementById('formulations-filter-form');
   if (!form) return;
   const output = document.getElementById('formulations-results');
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    // Remove blank inputs to keep API query params clean and explicit.
+  const prevButton = document.getElementById('formulations-prev-page');
+  const nextButton = document.getElementById('formulations-next-page');
+  const pageLabel = document.getElementById('formulations-page-label');
+  const pageSize = 10;
+  let page = 1;
+  let lastTotal = 0;
+
+  // Fetch formulations with current filters and requested page, then render a formatted summary table.
+  async function loadFormulations(targetPage) {
     const params = new URLSearchParams();
     new FormData(form).forEach((value, key) => {
       const trimmed = value.toString().trim();
@@ -647,14 +856,52 @@ function attachFormulationsFilterForm() {
         params.append(key, trimmed);
       }
     });
+    params.set('page', String(targetPage));
+    params.set('page_size', String(pageSize));
+
     const response = await fetch(`/api/formulations?${params.toString()}`);
     const data = await response.json();
     if (!data.ok) {
-      alert(data.error || 'Error loading formulations');
-      return;
+      throw new Error(data.error || 'Error loading formulations');
     }
+
     const items = data.data.items || [];
+    page = Number(data.data.page || targetPage);
+    lastTotal = Number(data.data.total || 0);
     renderFormulationsTable(output, items);
+    updatePagerControls({ prevButton, nextButton, label: pageLabel, page, total: lastTotal, pageSize });
+  }
+
+  // Re-run query from page one whenever filter criteria change via explicit search submit.
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await loadFormulations(1);
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  // Navigate backwards while preserving active filter values from the form.
+  if (prevButton) {
+    prevButton.addEventListener('click', () => {
+      if (page <= 1) return;
+      loadFormulations(page - 1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Navigate forwards while preserving active filter values from the form.
+  if (nextButton) {
+    nextButton.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(lastTotal / pageSize));
+      if (page >= totalPages) return;
+      loadFormulations(page + 1).catch((error) => alert(error.message));
+    });
+  }
+
+  // Load all formulations (newest-to-oldest from API) on page open with default page size.
+  loadFormulations(1).catch((error) => {
+    alert(error.message);
   });
 }
 

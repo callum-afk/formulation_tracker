@@ -3,11 +3,12 @@ SELECT
   s.set_code,
   s.set_hash,
   s.created_at,
+  s.created_by,
   ARRAY_AGG(i.sku ORDER BY i.sku) AS sku_list
 FROM `PROJECT_ID.DATASET_ID.ingredient_sets` s
 JOIN `PROJECT_ID.DATASET_ID.ingredient_set_items` i
 ON i.set_code = s.set_code
-GROUP BY s.set_code, s.set_hash, s.created_at;
+GROUP BY s.set_code, s.set_hash, s.created_at, s.created_by;
 
 CREATE OR REPLACE VIEW `PROJECT_ID.DATASET_ID.v_weight_variants` AS
 SELECT

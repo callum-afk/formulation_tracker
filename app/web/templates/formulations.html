@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
-  <!-- Form-level filters now include SKU membership search for quick set discovery by ingredient code. -->
+  <!-- Form-level filters include SKU membership search for quick formulation discovery by ingredient code. -->
   <h2>Formulations</h2>
   <form id="formulations-filter-form" class="form-stack">
     <div class="grid">
@@ -25,6 +25,11 @@
         <tr><td colspan="8">No formulations loaded.</td></tr>
       </tbody>
     </table>
+  </div>
+  <div class="inline-actions" id="formulations-pagination">
+    <button type="button" id="formulations-prev-page">Previous</button>
+    <span id="formulations-page-label">Page 1</span>
+    <button type="button" id="formulations-next-page">Next</button>
   </div>
 </section>
 {% endblock %}
