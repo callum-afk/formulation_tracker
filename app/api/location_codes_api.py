@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from google.api_core.exceptions import NotFound
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, LocationCodeCreate, LocationPartnerCreate
@@ -49,7 +50,11 @@ DEFAULT_LOCATION_PARTNERS = [
 @router.get("/partners", response_model=ApiResponse)
 def list_location_partners(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Merge requested default mappings with user-created partner rows while preserving unique partner codes.
-    custom = bigquery.list_location_partners()
+    try:
+        custom = bigquery.list_location_partners()
+    except NotFound:
+        # If the custom partner table is missing in an environment, still return seeded partners for dropdown use.
+        custom = []
     by_code = {partner["partner_code"]: partner for partner in DEFAULT_LOCATION_PARTNERS}
     for partner in custom:
         by_code[partner["partner_code"]] = partner
@@ -63,11 +68,17 @@ def create_location_partner(
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor)
 ) -> ApiResponse:
-    # Allocate the next two-letter code after seed values so custom partners continue from code BE onwards.
-    next_value = bigquery.allocate_counter("location_partner_code", "", 31)
-    partner_code = int_to_code(next_value)
-    if bigquery.get_location_partner(partner_code):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Partner code already exists")
+    # Allocate the next two-letter code after seed values so custom partners continue from code BF onwards.
+    partner_code = None
+    for _ in range(20):
+        # Always reserve a fresh code, even when partner or machine text matches an existing row.
+        next_value = bigquery.allocate_counter("location_partner_code", "", 31)
+        candidate = int_to_code(next_value)
+        if not bigquery.get_location_partner(candidate):
+            partner_code = candidate
+            break
+    if not partner_code:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unable to allocate a unique partner code")
     bigquery.insert_location_partner(
         partner_code=partner_code,
         partner_name=payload.partner_name,
@@ -85,7 +96,11 @@ def create_location_code(
 ) -> ApiResponse:
     # Validate partner code against the merged default+custom partner registry before issuing a location ID.
     partner_codes = {partner["partner_code"] for partner in DEFAULT_LOCATION_PARTNERS}
-    partner_codes.update(partner["partner_code"] for partner in bigquery.list_location_partners())
+    try:
+        partner_codes.update(partner["partner_code"] for partner in bigquery.list_location_partners())
+    except NotFound:
+        # Allow location code generation to proceed with seeded defaults when custom table is unavailable.
+        pass
     if payload.partner_code not in partner_codes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner code not found")
 

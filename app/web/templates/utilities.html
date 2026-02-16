@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Import ingredient</h2>
+  <form id="ingredient-import-form" class="form-stack">
+    <div class="grid">
+      <label>SKU <input name="sku" required /></label>
+      <label>Category code
+        <select name="category_code" required>
+          <option value="0">0 - Seaweed</option>
+          <option value="1">1 - Starch</option>
+          <option value="2">2 - Fibre</option>
+          <option value="3">3 - Plasticiser</option>
+          <option value="4">4 - Roll</option>
+          <option value="5">5 - Oil and Wax</option>
+          <option value="6">6 - Mix</option>
+          <option value="7">7 - Pellet</option>
+          <option value="8">8 - Additives</option>
+          <option value="9">9 - Other</option>
+        </select>
+      </label>
+      <label>Trade name / INCI <input name="trade_name_inci" required /></label>
+      <label>Supplier <input name="supplier" required /></label>
+      <label>Spec grade <input name="spec_grade" /></label>
+      <label>Format
+        <select name="format" required>
+          <option>Powder</option>
+          <option>Liquid</option>
+          <option>Pellet</option>
+          <option>Film</option>
+          <option>Granules</option>
+          <option>Water</option>
+        </select>
+      </label>
+      <label>Pack size value <input name="pack_size_value" type="number" min="1" max="1000" required /></label>
+      <label>Pack size unit
+        <select name="pack_size_unit" required>
+          <option>kg</option>
+          <option>L</option>
+        </select>
+      </label>
+      <label>MSDS (PDF, optional)
+        <input type="file" name="msds_file" accept="application/pdf" />
+      </label>
+    </div>
+    <button type="submit">Import</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Create partner code</h2>
+  <form id="location-partner-form" class="form-stack">
+    <div class="grid">
+      <label>Partner name <input name="partner_name" required /></label>
+      <label>Machine specification <input name="machine_specification" required /></label>
+    </div>
+    <button type="submit">Create partner code</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Partner codes</h2>
+  <div id="location-partner-results">
+    <table>
+      <tbody>
+        <tr><td>No partners loaded.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

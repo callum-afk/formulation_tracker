@@ -135,6 +135,21 @@ a:hover {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Left nav cluster holds the standard workflow links and wraps naturally on narrow screens. */
+.site-nav-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Right nav cluster reserves space for utility actions requested as a separate destination. */
+.site-nav-right {
+  display: flex;
+  margin-left: auto;
 }
 
 /* Navigation link tokens define compact pills with smooth hover and focus transitions. */
