@@ -1,10 +1,17 @@
 async function postJson(url, payload) {
+  // Submit JSON payloads and gracefully surface non-JSON server errors.
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const rawBody = await response.text();
+  let data;
+  try {
+    data = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    throw new Error(rawBody || response.statusText || 'Unexpected server response');
+  }
   if (!response.ok || !data.ok) {
     throw new Error(data.error || data.detail || response.statusText);
   }
@@ -12,8 +19,15 @@ async function postJson(url, payload) {
 }
 
 async function fetchJson(url) {
+  // Load JSON payloads while handling plain-text backend errors without JSON parse crashes.
   const response = await fetch(url);
-  const data = await response.json();
+  const rawBody = await response.text();
+  let data;
+  try {
+    data = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    throw new Error(rawBody || response.statusText || 'Unexpected server response');
+  }
   if (!response.ok || !data.ok) {
     throw new Error(data.error || data.detail || response.statusText);
   }
@@ -965,8 +979,6 @@ function formatDateToYyMmDd(dateValue) {
 function attachLocationCodePage() {
   const locationForm = document.getElementById('location-code-form');
   if (!locationForm) return;
-  const partnerForm = document.getElementById('location-partner-form');
-  const partnerResults = document.getElementById('location-partner-results');
   const partnerSelect = document.getElementById('location-partner-select');
   const dateInput = document.getElementById('location-production-date');
   const dateCodeInput = document.getElementById('location-production-code');
@@ -984,40 +996,19 @@ function attachLocationCodePage() {
     partners.forEach((partner) => {
       const option = document.createElement('option');
       option.value = partner.partner_code;
-      option.textContent = `${partner.partner_name}`;
+      // Render machine specification in the option label so similarly named partners remain distinguishable.
+      const machineSpecification = (partner.machine_specification || '').toString().trim();
+      option.textContent = machineSpecification
+        ? `${partner.partner_name} (${machineSpecification})`
+        : `${partner.partner_name}`;
       option.dataset.partnerCode = partner.partner_code;
       partnerSelect.appendChild(option);
     });
-
-    const rows = partners.map((partner) => [
-      partner.partner_name || '',
-      partner.partner_code || '',
-      partner.machine_specification || '',
-      partner.created_by || '',
-    ]);
-    buildTable(partnerResults, ['Partner', 'Identification Code', 'Machine specification', 'Owner'], rows, 'No partners found.');
   }
 
   // Update generated YYMMDD preview whenever the production date picker changes.
   dateInput.addEventListener('input', () => {
     dateCodeInput.value = formatDateToYyMmDd(dateInput.value);
-  });
-
-  partnerForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const formData = new FormData(partnerForm);
-    const payload = {
-      partner_name: (formData.get('partner_name') || '').toString().trim(),
-      machine_specification: (formData.get('machine_specification') || '').toString().trim(),
-    };
-    try {
-      const created = await postJson('/api/location_codes/partners', payload);
-      alert(`Partner code ${created.partner_code} created.`);
-      partnerForm.reset();
-      await loadPartners();
-    } catch (error) {
-      alert(error.message);
-    }
   });
 
   locationForm.addEventListener('submit', async (event) => {
@@ -1052,6 +1043,45 @@ function attachLocationCodePage() {
   loadPartners().catch((error) => alert(error.message));
 }
 
+function attachLocationPartnerUtilityForm() {
+  // Wire the utilities page partner creation workflow and keep the partner code table in sync.
+  const partnerForm = document.getElementById('location-partner-form');
+  if (!partnerForm) return;
+  const partnerResults = document.getElementById('location-partner-results');
+
+  async function loadPartnerTable() {
+    const data = await fetchJson('/api/location_codes/partners');
+    const partners = data.items || [];
+    const rows = partners.map((partner) => [
+      partner.partner_name || '',
+      partner.partner_code || '',
+      partner.machine_specification || '',
+      partner.created_by || '',
+    ]);
+    buildTable(partnerResults, ['Partner', 'Identification Code', 'Machine specification', 'Owner'], rows, 'No partners found.');
+  }
+
+  partnerForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(partnerForm);
+    const payload = {
+      // Always create a new AB code from the counter, even if partner/machine text matches existing rows.
+      partner_name: (formData.get('partner_name') || '').toString().trim(),
+      machine_specification: (formData.get('machine_specification') || '').toString().trim(),
+    };
+    try {
+      const created = await postJson('/api/location_codes/partners', payload);
+      alert(`Partner code ${created.partner_code} created.`);
+      partnerForm.reset();
+      await loadPartnerTable();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadPartnerTable().catch((error) => alert(error.message));
+}
+
 // Render formulations on the batch detail page by loading them from the batch detail API endpoint.
 function attachBatchDetailFormulations() {
   const container = document.getElementById('batch-detail-formulations');
@@ -1083,4 +1113,5 @@ attachBatchVariantForm();
 attachBatchVariantLookupForm();
 attachFormulationsFilterForm();
 attachLocationCodePage();
+attachLocationPartnerUtilityForm();
 attachBatchDetailFormulations();

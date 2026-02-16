@@ -36,6 +36,15 @@ async def ingredient_import(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/utilities", response_class=HTMLResponse)
+async def utilities(request: Request) -> HTMLResponse:
+    # Serve utility workflows (SKU import and partner-code creation) on a single page.
+    return templates.TemplateResponse(
+        "utilities.html",
+        {"request": request, "title": "Utilities"},
+    )
+
+
 @router.get("/batches", response_class=HTMLResponse)
 async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     items = bigquery.list_ingredients({})
