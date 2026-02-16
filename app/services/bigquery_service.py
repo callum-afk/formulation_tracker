@@ -639,3 +639,80 @@ class BigQueryService:
             ],
         ).result()
         return [dict(row) for row in rows]
+
+    def list_location_partners(self) -> List[Dict[str, Any]]:
+        # Return all persisted custom partner-code mappings in code order for predictable dropdown rendering.
+        query = (
+            f"SELECT partner_code, partner_name, machine_specification, created_at, created_by "
+            f"FROM `{self.dataset}.location_partners` ORDER BY partner_code"
+        )
+        rows = self._run(query, []).result()
+        return [dict(row) for row in rows]
+
+    def get_location_partner(self, partner_code: str) -> Optional[Dict[str, Any]]:
+        # Fetch a single custom location partner row by its two-letter partner code.
+        query = (
+            f"SELECT partner_code, partner_name, machine_specification, created_at, created_by "
+            f"FROM `{self.dataset}.location_partners` WHERE partner_code = @partner_code LIMIT 1"
+        )
+        rows = self._run(
+            query,
+            [bigquery.ScalarQueryParameter("partner_code", "STRING", partner_code)],
+        ).result()
+        for row in rows:
+            return dict(row)
+        return None
+
+    def insert_location_partner(
+        self,
+        partner_code: str,
+        partner_name: str,
+        machine_specification: str,
+        created_by: Optional[str],
+    ) -> None:
+        # Persist a newly created custom partner and machine specification to support future selection.
+        query = (
+            f"INSERT `{self.dataset}.location_partners` "
+            "(partner_code, partner_name, machine_specification, created_at, created_by) "
+            "VALUES (@partner_code, @partner_name, @machine_specification, @created_at, @created_by)"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("partner_code", "STRING", partner_code),
+                bigquery.ScalarQueryParameter("partner_name", "STRING", partner_name),
+                bigquery.ScalarQueryParameter("machine_specification", "STRING", machine_specification),
+                bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", datetime.now(timezone.utc)),
+                bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
+            ],
+        ).result()
+
+    def insert_location_code(
+        self,
+        set_code: str,
+        weight_code: str,
+        batch_variant_code: str,
+        partner_code: str,
+        production_date: str,
+        location_id: str,
+        created_by: Optional[str],
+    ) -> None:
+        # Store generated location IDs so batch traceability records can be audited later.
+        query = (
+            f"INSERT `{self.dataset}.location_codes` "
+            "(set_code, weight_code, batch_variant_code, partner_code, production_date, location_id, created_at, created_by) "
+            "VALUES (@set_code, @weight_code, @batch_variant_code, @partner_code, @production_date, @location_id, @created_at, @created_by)"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("set_code", "STRING", set_code),
+                bigquery.ScalarQueryParameter("weight_code", "STRING", weight_code),
+                bigquery.ScalarQueryParameter("batch_variant_code", "STRING", batch_variant_code),
+                bigquery.ScalarQueryParameter("partner_code", "STRING", partner_code),
+                bigquery.ScalarQueryParameter("production_date", "STRING", production_date),
+                bigquery.ScalarQueryParameter("location_id", "STRING", location_id),
+                bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", datetime.now(timezone.utc)),
+                bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
+            ],
+        ).result()

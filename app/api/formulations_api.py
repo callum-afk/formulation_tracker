@@ -24,11 +24,11 @@ def list_formulations(
     # Build optional filters from query params so users can browse all or narrow by one/more fields.
     filters: Dict[str, str] = {}
     if set_code:
-        filters["set_code"] = set_code
+        filters["set_code"] = set_code.strip().upper()
     if weight_code:
-        filters["weight_code"] = weight_code
+        filters["weight_code"] = weight_code.strip().upper()
     if batch_variant_code:
-        filters["batch_variant_code"] = batch_variant_code
+        filters["batch_variant_code"] = batch_variant_code.strip().upper()
     # Include optional SKU filter so users can search formulations containing a specific ingredient code.
     if sku:
         filters["sku"] = sku

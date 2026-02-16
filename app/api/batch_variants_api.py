@@ -69,5 +69,6 @@ def list_batch_variants(
     weight_code: str,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
-    rows = bigquery.list_batch_variants(set_code, weight_code)
+    # Normalize lookup codes so lowercase user entry still resolves matching batch variants.
+    rows = bigquery.list_batch_variants(set_code.strip().upper(), weight_code.strip().upper())
     return ApiResponse(ok=True, data={"items": rows})
