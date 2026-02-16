@@ -124,6 +124,61 @@ a:hover {
   line-height: 1.05;
 }
 
+
+
+/* Site title is laid out with logo + text while preserving baseline rhythm. */
+.site-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Brand logo scales to title line-height and remains crisp on high-density displays. */
+.site-logo {
+  height: 1.2em;
+  width: auto;
+  object-fit: contain;
+  display: inline-block;
+}
+
+/* Copy wrapper positions action button under code text and hides it until hover/focus. */
+.copy-text-block {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+/* Code/value style keeps compact monospaced readability for generated IDs and codes. */
+.copy-text-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+/* Hover-only copy button stays subtle and appears only when users target the code block. */
+.copy-text-button {
+  min-height: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, white 80%, var(--color-paper-100));
+  color: var(--color-ink-700);
+  font-size: 0.73rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+/* Reveal copy action on hover or keyboard focus within the copy block container. */
+.copy-text-block:hover .copy-text-button,
+.copy-text-block:focus-within .copy-text-button {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Version text remains subtle while preserving readability against the paper background. */
 .app-version {
   color: var(--color-ink-500);

@@ -14,8 +14,18 @@ templates = Jinja2Templates(directory="app/web/templates")
 
 
 @router.get("/", response_class=HTMLResponse)
-async def home(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("base.html", {"request": request, "title": "Formulation Tracker"})
+async def home(
+    request: Request,
+    q: str | None = None,
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> HTMLResponse:
+    # Render the ingredients landing page at root so / and /ingredients behave consistently.
+    filters = {"q": q} if q else {}
+    items = bigquery.list_ingredients(filters)
+    return templates.TemplateResponse(
+        "ingredients.html",
+        {"request": request, "title": "Ingredients", "items": items, "q": q or ""},
+    )
 
 
 @router.get("/ingredients", response_class=HTMLResponse)

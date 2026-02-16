@@ -833,58 +833,126 @@ function attachBatchVariantLookupForm() {
   });
 }
 
-// Build a readable summary text from batch item arrays for table display.
-function formatBatchItems(batchItems) {
-  if (!Array.isArray(batchItems) || batchItems.length === 0) {
-    return '—';
+// Build per-SKU map so formulation arrays can be aligned by sku key for rowspans.
+function mapItemsBySku(items, valueKey) {
+  const map = new Map();
+  if (!Array.isArray(items)) {
+    return map;
   }
-  return batchItems.map((item) => `${item.sku || ''}: ${item.ingredient_batch_code || ''}`).join(', ');
-}
-
-// Build a readable summary text from dry-weight items for table display.
-function formatWeightItems(weightItems) {
-  if (!Array.isArray(weightItems) || weightItems.length === 0) {
-    return '—';
-  }
-  return weightItems.map((item) => `${item.sku || ''}: ${formatPercent(item.wt_percent)}`).join(', ');
-}
-
-// Render formulations in a stable, useful column layout instead of dumping raw object payloads.
-function renderFormulationsTable(output, items) {
-  const headers = ['Formulation', 'Breakdown', 'Created', 'SKU Count', 'SKUs', 'Dry Weights', 'Batches'];
-  const rows = items.map((item) => {
-    // Build the main code string users read first in the formulation table.
-    const formulationCode = [item.set_code || '', item.weight_code || '', item.batch_variant_code || ''].join(' ').trim();
-    // Render a mini-table style breakdown to mirror the requested screenshot layout and improve scannability.
-    const breakdown = document.createElement('div');
-    breakdown.className = 'mini-breakdown';
-    [
-      ['Set', item.set_code || ''],
-      ['Weight', item.weight_code || ''],
-      ['Batch', item.batch_variant_code || ''],
-    ].forEach(([label, value]) => {
-      const row = document.createElement('div');
-      row.className = 'mini-breakdown-row';
-      const key = document.createElement('span');
-      key.className = 'mini-breakdown-key';
-      key.textContent = label;
-      const code = document.createElement('code');
-      code.textContent = value;
-      row.appendChild(key);
-      row.appendChild(code);
-      breakdown.appendChild(row);
-    });
-    return [
-      formulationCode,
-      breakdown,
-      item.created_at ? new Date(item.created_at).toLocaleString() : '',
-      item.sku_count ?? '',
-      Array.isArray(item.sku_list) ? item.sku_list.join(', ') : (item.sku_list || ''),
-      formatWeightItems(item.weight_items),
-      formatBatchItems(item.batch_items),
-    ];
+  items.forEach((item) => {
+    const sku = item?.sku;
+    if (!sku) return;
+    map.set(sku, item[valueKey]);
   });
-  buildTable(output, headers, rows, 'No formulations found.');
+  return map;
+}
+
+// Create reusable hover-only copy control used by formulation and location code values.
+function createCopyTextBlock(copyValue, className = '') {
+  const wrapper = document.createElement('div');
+  wrapper.className = `copy-text-block ${className}`.trim();
+  const value = document.createElement('div');
+  value.className = 'copy-text-value';
+  value.textContent = copyValue || '';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'copy-text-button';
+  button.textContent = 'Copy text';
+  button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(copyValue || '');
+      button.textContent = 'Copied';
+      window.setTimeout(() => {
+        button.textContent = 'Copy text';
+      }, 1200);
+    } catch (error) {
+      button.textContent = 'Copy failed';
+      window.setTimeout(() => {
+        button.textContent = 'Copy text';
+      }, 1200);
+    }
+  });
+  wrapper.appendChild(value);
+  wrapper.appendChild(button);
+  return wrapper;
+}
+
+// Render formulation rows with HTML rowspans so sku/weight/batch lines align like the reference.
+function renderFormulationsTable(output, items) {
+  clearElement(output);
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  ['Formulation', 'Created', 'Owner', 'SKU Count', 'SKUs', 'Dry Weights (%)', 'Batches'].forEach((label) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+
+  if (!items.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 7;
+    cell.textContent = 'No formulations found.';
+    row.appendChild(cell);
+    tbody.appendChild(row);
+    table.appendChild(tbody);
+    output.appendChild(table);
+    return;
+  }
+
+  items.forEach((item) => {
+    const skuList = Array.isArray(item.sku_list) ? item.sku_list : parseList(item.sku_list || '');
+    const weightMap = mapItemsBySku(item.weight_items, 'wt_percent');
+    const batchMap = mapItemsBySku(item.batch_items, 'ingredient_batch_code');
+    const displaySkus = skuList.length ? skuList : ['—'];
+    const lineCount = displaySkus.length;
+    const formulationCode = [item.set_code || '', item.weight_code || '', item.batch_variant_code || ''].join(' ').trim();
+
+    displaySkus.forEach((sku, index) => {
+      const row = document.createElement('tr');
+
+      if (index === 0) {
+        const formulationCell = document.createElement('td');
+        formulationCell.rowSpan = lineCount;
+        formulationCell.appendChild(createCopyTextBlock(formulationCode, 'formulation-copy'));
+
+        const createdCell = document.createElement('td');
+        createdCell.rowSpan = lineCount;
+        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+
+        const ownerCell = document.createElement('td');
+        ownerCell.rowSpan = lineCount;
+        ownerCell.textContent = item.created_by || 'Unknown';
+
+        const countCell = document.createElement('td');
+        countCell.rowSpan = lineCount;
+        countCell.textContent = item.sku_count ?? skuList.length;
+
+        row.appendChild(formulationCell);
+        row.appendChild(createdCell);
+        row.appendChild(ownerCell);
+        row.appendChild(countCell);
+      }
+
+      const skuCell = document.createElement('td');
+      skuCell.textContent = sku;
+      const weightCell = document.createElement('td');
+      weightCell.textContent = sku === '—' ? '—' : formatPercent(weightMap.get(sku));
+      const batchCell = document.createElement('td');
+      batchCell.textContent = sku === '—' ? '—' : (batchMap.get(sku) || '');
+      row.appendChild(skuCell);
+      row.appendChild(weightCell);
+      row.appendChild(batchCell);
+      tbody.appendChild(row);
+    });
+  });
+
+  table.appendChild(tbody);
+  output.appendChild(table);
 }
 
 // Attach formulation filtering with support for filtering by SKU membership.
@@ -968,6 +1036,16 @@ function attachFormulationsFilterForm() {
 }
 
 
+function formatYyMmDdToDateLabel(codeValue) {
+  // Convert YYMMDD values into a readable YYYY-MM-DD label for the date-of-production column.
+  const value = (codeValue || '').toString();
+  if (!/^\d{6}$/.test(value)) return value;
+  const year = `20${value.slice(0, 2)}`;
+  const month = value.slice(2, 4);
+  const day = value.slice(4, 6);
+  return `${year}-${month}-${day}`;
+}
+
 function formatDateToYyMmDd(dateValue) {
   // Convert YYYY-MM-DD input values into the requested reversed YYMMDD code format.
   if (!dateValue) return '';
@@ -983,9 +1061,16 @@ function attachLocationCodePage() {
   const dateInput = document.getElementById('location-production-date');
   const dateCodeInput = document.getElementById('location-production-code');
   const output = document.getElementById('location-code-output');
+  const tableBody = document.getElementById('location-codes-table-body');
+  const prevButton = document.getElementById('location-codes-prev-page');
+  const nextButton = document.getElementById('location-codes-next-page');
+  const pageLabel = document.getElementById('location-codes-page-label');
+  const pageSize = 10;
+  let page = 1;
+  let lastTotal = 0;
 
+  // Fetch and render partner-name-first dropdown options with code metadata for location generation.
   async function loadPartners() {
-    // Fetch and render partner-name-first dropdown options with code metadata for location generation.
     const data = await fetchJson('/api/location_codes/partners');
     const partners = data.items || [];
     clearElement(partnerSelect);
@@ -1004,6 +1089,50 @@ function attachLocationCodePage() {
       option.dataset.partnerCode = partner.partner_code;
       partnerSelect.appendChild(option);
     });
+  }
+
+  // Render paginated location code table rows with inline copy controls.
+  async function loadLocationCodes(targetPage) {
+    const data = await fetchJson(`/api/location_codes?page=${encodeURIComponent(targetPage)}&page_size=${encodeURIComponent(pageSize)}`);
+    const items = data.items || [];
+    page = Number(data.page || targetPage);
+    lastTotal = Number(data.total || 0);
+    clearElement(tableBody);
+
+    if (!items.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 9;
+      cell.textContent = 'No location codes found.';
+      row.appendChild(cell);
+      tableBody.appendChild(row);
+    } else {
+      items.forEach((item) => {
+        const row = document.createElement('tr');
+        const locationCell = document.createElement('td');
+        locationCell.appendChild(createCopyTextBlock(item.location_id || '', 'location-copy'));
+        const setCell = document.createElement('td');
+        setCell.textContent = item.set_code || '';
+        const weightCell = document.createElement('td');
+        weightCell.textContent = item.weight_code || '';
+        const batchCell = document.createElement('td');
+        batchCell.textContent = item.batch_variant_code || '';
+        const partnerCell = document.createElement('td');
+        partnerCell.textContent = item.partner_code || '';
+        const dateCell = document.createElement('td');
+        dateCell.textContent = formatYyMmDdToDateLabel(item.production_date || '');
+        const yymmddCell = document.createElement('td');
+        yymmddCell.textContent = item.production_date || '';
+        const createdCell = document.createElement('td');
+        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        const ownerCell = document.createElement('td');
+        ownerCell.textContent = item.created_by || 'Unknown';
+        row.append(locationCell, setCell, weightCell, batchCell, partnerCell, dateCell, yymmddCell, createdCell, ownerCell);
+        tableBody.appendChild(row);
+      });
+    }
+
+    updatePagerControls({ prevButton, nextButton, label: pageLabel, page, total: lastTotal, pageSize });
   }
 
   // Update generated YYMMDD preview whenever the production date picker changes.
@@ -1034,13 +1163,31 @@ function attachLocationCodePage() {
     }
     try {
       const created = await postJson('/api/location_codes', payload);
-      output.textContent = `Location ID: ${created.location_id}`;
+      clearElement(output);
+      output.appendChild(createCopyTextBlock(created.location_id || '', 'location-copy-output'));
+      await loadLocationCodes(1);
     } catch (error) {
       alert(error.message);
     }
   });
 
+  if (prevButton) {
+    prevButton.addEventListener('click', () => {
+      if (page <= 1) return;
+      loadLocationCodes(page - 1).catch((error) => alert(error.message));
+    });
+  }
+
+  if (nextButton) {
+    nextButton.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(lastTotal / pageSize));
+      if (page >= totalPages) return;
+      loadLocationCodes(page + 1).catch((error) => alert(error.message));
+    });
+  }
+
   loadPartners().catch((error) => alert(error.message));
+  loadLocationCodes(1).catch((error) => alert(error.message));
 }
 
 function attachLocationPartnerUtilityForm() {

@@ -687,6 +687,27 @@ class BigQueryService:
             ],
         ).result()
 
+    def list_location_codes_paginated(self, page: int, page_size: int) -> Tuple[List[Dict[str, Any]], int]:
+        # Return paginated location code rows ordered newest-first for predictable table navigation.
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.location_codes`"
+        total_rows = list(self._run(count_query, []).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+
+        # Include deterministic tie-breakers to keep pagination stable for equal timestamps.
+        query = (
+            f"SELECT location_id, set_code, weight_code, batch_variant_code, partner_code, production_date, created_at, created_by "
+            f"FROM `{self.dataset}.location_codes` "
+            "ORDER BY created_at DESC, location_id DESC "
+            "LIMIT @limit OFFSET @offset"
+        )
+        offset = max(page - 1, 0) * page_size
+        params = [
+            bigquery.ScalarQueryParameter("limit", "INT64", page_size),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        rows = self._run(query, params).result()
+        return [dict(row) for row in rows], total
+
     def insert_location_code(
         self,
         set_code: str,
