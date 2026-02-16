@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Create location ID</h2>
+  <form id="location-code-form" class="form-stack">
+    <div class="grid">
+      <label>Set code <input name="set_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
+      <label>Weight code <input name="weight_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
+      <label>Batch variant code <input name="batch_variant_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
+      <label>Compounding partner
+        <select name="partner_code" id="location-partner-select" required>
+          <option value="">Select partner</option>
+        </select>
+      </label>
+      <label>Date of production
+        <input type="date" name="production_date" id="location-production-date" required />
+      </label>
+      <label>YYMMDD code
+        <input name="production_code" id="location-production-code" placeholder="240827" readonly />
+      </label>
+    </div>
+    <button type="submit">Generate location ID</button>
+  </form>
+  <p id="location-code-output"></p>
+</section>
+
+<section class="panel">
+  <h2>Add partner + machine specification</h2>
+  <form id="location-partner-form" class="form-stack">
+    <div class="grid">
+      <label>Partner name <input name="partner_name" required /></label>
+      <label>Machine specification <input name="machine_specification" required /></label>
+    </div>
+    <button type="submit">Create partner code</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Partner codes</h2>
+  <div id="location-partner-results">
+    <table>
+      <tbody>
+        <tr><td>No partners loaded.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

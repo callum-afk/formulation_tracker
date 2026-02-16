@@ -329,7 +329,7 @@ function attachBatchLookupForm() {
         const quantityCell = document.createElement('td');
         quantityCell.textContent = item.quantity_value !== null && item.quantity_value !== undefined && item.quantity_value !== '' ? `${item.quantity_value} ${item.quantity_unit || ''}`.trim() : '';
         const ownerCell = document.createElement('td');
-        ownerCell.textContent = item.created_by || '';
+        ownerCell.textContent = item.created_by || 'Unknown';
         const coaCell = document.createElement('td');
         if (item.spec_object_path) {
           const link = document.createElement('a');
@@ -477,7 +477,7 @@ function attachSetForm() {
         const setCodeCell = document.createElement('td');
         setCodeCell.textContent = item.set_code || '';
         const ownerCell = document.createElement('td');
-        ownerCell.textContent = item.created_by || '';
+        ownerCell.textContent = item.created_by || 'Unknown';
         const createdCell = document.createElement('td');
         createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
         const skusCell = document.createElement('td');
@@ -560,9 +560,12 @@ function attachDryWeightForm() {
   }
 
   async function loadSet() {
-    const setCode = new FormData(form).get('set_code')?.toString().trim();
-    if (!setCode) {
-      alert('Enter a set code to load SKUs.');
+    let setCode;
+    try {
+      // Keep set-code entry strict and case-insensitive by normalizing to uppercase before lookup.
+      setCode = normalizeTwoLetterCode(new FormData(form).get('set_code'));
+    } catch (error) {
+      alert(error.message);
       return;
     }
     const skus = await fetchSetSkus(setCode);
@@ -579,7 +582,14 @@ function attachDryWeightForm() {
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const setCode = new FormData(form).get('set_code')?.toString().trim();
+    let setCode;
+    try {
+      // Normalize set code before create so lowercase input (e.g. ab) posts correctly as AB.
+      setCode = normalizeTwoLetterCode(new FormData(form).get('set_code'));
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     const inputs = Array.from(entryContainer.querySelectorAll('input.dry-weight-input'));
     if (!setCode || inputs.length === 0) {
       alert('Load a set before creating a variant.');
@@ -617,7 +627,14 @@ function attachDryWeightLookupForm() {
   const output = document.getElementById('dry-weight-results');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const setCode = new FormData(form).get('set_code');
+    let setCode;
+    try {
+      // Normalize lookup code to make AB and ab searches behave identically in dry-weight lookup.
+      setCode = normalizeTwoLetterCode(new FormData(form).get('set_code'));
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
     const response = await fetch(`/api/dry_weights?set_code=${encodeURIComponent(setCode)}`);
     const data = await response.json();
     if (!data.ok) {
@@ -820,17 +837,39 @@ function formatWeightItems(weightItems) {
 
 // Render formulations in a stable, useful column layout instead of dumping raw object payloads.
 function renderFormulationsTable(output, items) {
-  const headers = ['Set', 'Weight', 'Batch Variant', 'Created', 'SKU Count', 'SKUs', 'Dry Weights', 'Batches'];
-  const rows = items.map((item) => [
-    item.set_code || '',
-    item.weight_code || '',
-    item.batch_variant_code || '',
-    item.created_at ? new Date(item.created_at).toLocaleString() : '',
-    item.sku_count ?? '',
-    Array.isArray(item.sku_list) ? item.sku_list.join(', ') : (item.sku_list || ''),
-    formatWeightItems(item.weight_items),
-    formatBatchItems(item.batch_items),
-  ]);
+  const headers = ['Formulation', 'Breakdown', 'Created', 'SKU Count', 'SKUs', 'Dry Weights', 'Batches'];
+  const rows = items.map((item) => {
+    // Build the main code string users read first in the formulation table.
+    const formulationCode = [item.set_code || '', item.weight_code || '', item.batch_variant_code || ''].join(' ').trim();
+    // Render a mini-table style breakdown to mirror the requested screenshot layout and improve scannability.
+    const breakdown = document.createElement('div');
+    breakdown.className = 'mini-breakdown';
+    [
+      ['Set', item.set_code || ''],
+      ['Weight', item.weight_code || ''],
+      ['Batch', item.batch_variant_code || ''],
+    ].forEach(([label, value]) => {
+      const row = document.createElement('div');
+      row.className = 'mini-breakdown-row';
+      const key = document.createElement('span');
+      key.className = 'mini-breakdown-key';
+      key.textContent = label;
+      const code = document.createElement('code');
+      code.textContent = value;
+      row.appendChild(key);
+      row.appendChild(code);
+      breakdown.appendChild(row);
+    });
+    return [
+      formulationCode,
+      breakdown,
+      item.created_at ? new Date(item.created_at).toLocaleString() : '',
+      item.sku_count ?? '',
+      Array.isArray(item.sku_list) ? item.sku_list.join(', ') : (item.sku_list || ''),
+      formatWeightItems(item.weight_items),
+      formatBatchItems(item.batch_items),
+    ];
+  });
   buildTable(output, headers, rows, 'No formulations found.');
 }
 
@@ -853,7 +892,16 @@ function attachFormulationsFilterForm() {
     new FormData(form).forEach((value, key) => {
       const trimmed = value.toString().trim();
       if (trimmed) {
-        params.append(key, trimmed);
+        // Normalize all two-letter formulation filters so AB and ab return identical results.
+        if (['set_code', 'weight_code', 'batch_variant_code'].includes(key)) {
+          try {
+            params.append(key, normalizeTwoLetterCode(trimmed));
+          } catch (error) {
+            throw error;
+          }
+        } else {
+          params.append(key, trimmed);
+        }
       }
     });
     params.set('page', String(targetPage));
@@ -905,6 +953,105 @@ function attachFormulationsFilterForm() {
   });
 }
 
+
+function formatDateToYyMmDd(dateValue) {
+  // Convert YYYY-MM-DD input values into the requested reversed YYMMDD code format.
+  if (!dateValue) return '';
+  const [year, month, day] = dateValue.split('-');
+  if (!year || !month || !day) return '';
+  return `${year.slice(-2)}${month}${day}`;
+}
+
+function attachLocationCodePage() {
+  const locationForm = document.getElementById('location-code-form');
+  if (!locationForm) return;
+  const partnerForm = document.getElementById('location-partner-form');
+  const partnerResults = document.getElementById('location-partner-results');
+  const partnerSelect = document.getElementById('location-partner-select');
+  const dateInput = document.getElementById('location-production-date');
+  const dateCodeInput = document.getElementById('location-production-code');
+  const output = document.getElementById('location-code-output');
+
+  async function loadPartners() {
+    // Fetch and render partner-name-first dropdown options with code metadata for location generation.
+    const data = await fetchJson('/api/location_codes/partners');
+    const partners = data.items || [];
+    clearElement(partnerSelect);
+    const first = document.createElement('option');
+    first.value = '';
+    first.textContent = 'Select partner';
+    partnerSelect.appendChild(first);
+    partners.forEach((partner) => {
+      const option = document.createElement('option');
+      option.value = partner.partner_code;
+      option.textContent = `${partner.partner_name}`;
+      option.dataset.partnerCode = partner.partner_code;
+      partnerSelect.appendChild(option);
+    });
+
+    const rows = partners.map((partner) => [
+      partner.partner_name || '',
+      partner.partner_code || '',
+      partner.machine_specification || '',
+      partner.created_by || '',
+    ]);
+    buildTable(partnerResults, ['Partner', 'Identification Code', 'Machine specification', 'Owner'], rows, 'No partners found.');
+  }
+
+  // Update generated YYMMDD preview whenever the production date picker changes.
+  dateInput.addEventListener('input', () => {
+    dateCodeInput.value = formatDateToYyMmDd(dateInput.value);
+  });
+
+  partnerForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(partnerForm);
+    const payload = {
+      partner_name: (formData.get('partner_name') || '').toString().trim(),
+      machine_specification: (formData.get('machine_specification') || '').toString().trim(),
+    };
+    try {
+      const created = await postJson('/api/location_codes/partners', payload);
+      alert(`Partner code ${created.partner_code} created.`);
+      partnerForm.reset();
+      await loadPartners();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  locationForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(locationForm);
+    let payload;
+    try {
+      // Validate all AB-style code fields and normalize to uppercase for consistent location IDs.
+      payload = {
+        set_code: normalizeTwoLetterCode(formData.get('set_code')),
+        weight_code: normalizeTwoLetterCode(formData.get('weight_code')),
+        batch_variant_code: normalizeTwoLetterCode(formData.get('batch_variant_code')),
+        partner_code: normalizeTwoLetterCode(formData.get('partner_code')),
+        production_date: formatDateToYyMmDd((formData.get('production_date') || '').toString()),
+      };
+    } catch (error) {
+      alert(error.message);
+      return;
+    }
+    if (!payload.production_date) {
+      alert('Please select a production date.');
+      return;
+    }
+    try {
+      const created = await postJson('/api/location_codes', payload);
+      output.textContent = `Location ID: ${created.location_id}`;
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadPartners().catch((error) => alert(error.message));
+}
+
 // Render formulations on the batch detail page by loading them from the batch detail API endpoint.
 function attachBatchDetailFormulations() {
   const container = document.getElementById('batch-detail-formulations');
@@ -935,4 +1082,5 @@ attachDryWeightLookupForm();
 attachBatchVariantForm();
 attachBatchVariantLookupForm();
 attachFormulationsFilterForm();
+attachLocationCodePage();
 attachBatchDetailFormulations();

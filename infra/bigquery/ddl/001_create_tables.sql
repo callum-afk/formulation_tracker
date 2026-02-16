@@ -105,3 +105,22 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.audit_log` (
   entity_id STRING NOT NULL,
   payload_json STRING
 );
+
+CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.location_partners` (
+  partner_code STRING NOT NULL,
+  partner_name STRING NOT NULL,
+  machine_specification STRING,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING
+);
+
+CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.location_codes` (
+  set_code STRING NOT NULL,
+  weight_code STRING NOT NULL,
+  batch_variant_code STRING NOT NULL,
+  partner_code STRING NOT NULL,
+  production_date STRING NOT NULL,
+  location_id STRING NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING
+);

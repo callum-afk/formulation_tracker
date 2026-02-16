@@ -95,3 +95,37 @@ class MsdsUploadResponse(BaseModel):
     filename: str
     content_type: str
     uploaded_at: Optional[str] = None
+
+
+class LocationPartnerCreate(BaseModel):
+    # Require a readable partner label so users can pick this value in the location-code workflow.
+    partner_name: str
+    # Store machine details as free text, as requested for lightweight partner onboarding.
+    machine_specification: str
+
+
+class LocationCodeCreate(BaseModel):
+    # The first three code parts map to set + weight + batch variant and must each be two letters.
+    set_code: str
+    weight_code: str
+    batch_variant_code: str
+    # Partner code must also stay in the same two-letter alphabetic format.
+    partner_code: str
+    # Production date is encoded backwards as YYMMDD for final location IDs.
+    production_date: str
+
+    @validator("set_code", "weight_code", "batch_variant_code", "partner_code", pre=True)
+    def normalize_location_code_parts(cls, value: str) -> str:
+        # Uppercase and validate each part to enforce strict two-letter code hygiene across the flow.
+        code = (value or "").strip().upper()
+        if len(code) != 2 or not code.isalpha():
+            raise ValueError("location code parts must be exactly two letters (A-Z)")
+        return code
+
+    @validator("production_date", pre=True)
+    def normalize_production_date(cls, value: str) -> str:
+        # Accept only YYMMDD numeric values so generated location IDs stay machine-readable.
+        normalized = (value or "").strip()
+        if len(normalized) != 6 or not normalized.isdigit():
+            raise ValueError("production_date must be exactly 6 digits in YYMMDD format")
+        return normalized

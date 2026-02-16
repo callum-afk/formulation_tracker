@@ -97,6 +97,15 @@ async def formulations(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/location_codes", response_class=HTMLResponse)
+async def location_codes(request: Request) -> HTMLResponse:
+    # Serve the location-ID workflow page for production partner/date code generation and partner management.
+    return templates.TemplateResponse(
+        "location_codes.html",
+        {"request": request, "title": "Location Codes"},
+    )
+
+
 @router.get("/ingredients/{sku}/edit", response_class=HTMLResponse)
 async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     ingredient = bigquery.get_ingredient(sku)

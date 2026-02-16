@@ -55,5 +55,7 @@ def create_weights(
 
 @router.get("", response_model=ApiResponse)
 def list_weights(set_code: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
-    rows = bigquery.list_weights(set_code)
+    # Normalize lookup codes so searches work the same for lowercase and uppercase user input.
+    normalized_set_code = set_code.strip().upper()
+    rows = bigquery.list_weights(normalized_set_code)
     return ApiResponse(ok=True, data={"items": rows})

@@ -367,3 +367,36 @@ table tbody tr:hover td {
     padding: 0 var(--space-3);
   }
 }
+
+/* Mini-breakdown container creates a compact sub-table visual inside each formulation row. */
+.mini-breakdown {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 180px;
+}
+
+/* Each breakdown line uses a two-column key/value layout to mimic spreadsheet-style nested cells. */
+.mini-breakdown-row {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, white);
+  border-radius: 6px;
+  background: color-mix(in srgb, white 70%, var(--color-paper-100));
+}
+
+/* Breakdown key labels stay subtle while keeping short uppercase code labels readable. */
+.mini-breakdown-key {
+  color: var(--color-ink-500);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Inline code style improves distinction between partner/set code tokens and plain body text. */
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+}
