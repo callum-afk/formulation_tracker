@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from google.api_core.exceptions import NotFound
 
 from app.dependencies import get_actor, get_bigquery
@@ -87,6 +87,18 @@ def create_location_partner(
     )
     return ApiResponse(ok=True, data={"partner_code": partner_code, "partner_name": payload.partner_name})
 
+
+
+
+@router.get("", response_model=ApiResponse)
+def list_location_codes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> ApiResponse:
+    # Return paginated location IDs for UI table rendering without changing creation APIs.
+    rows, total = bigquery.list_location_codes_paginated(page=page, page_size=page_size)
+    return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
 
 @router.post("", response_model=ApiResponse)
 def create_location_code(

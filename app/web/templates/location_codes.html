@@ -23,4 +23,34 @@
   </form>
   <p id="location-code-output"></p>
 </section>
+
+<section class="panel">
+  <!-- Paginated list of created location codes keeps recent records visible for traceability. -->
+  <h2>Location codes</h2>
+  <div id="location-codes-results">
+    <table>
+      <thead>
+        <tr>
+          <th>Location code</th>
+          <th>Set code</th>
+          <th>Weight code</th>
+          <th>Batch variant code</th>
+          <th>Compounding partner</th>
+          <th>Date of production</th>
+          <th>YYMMDD code</th>
+          <th>Created</th>
+          <th>Owner</th>
+        </tr>
+      </thead>
+      <tbody id="location-codes-table-body">
+        <tr><td colspan="9">No location codes loaded.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="inline-actions" id="location-codes-pagination">
+    <button type="button" id="location-codes-prev-page">Previous</button>
+    <span id="location-codes-page-label">Page 1 of 1</span>
+    <button type="button" id="location-codes-next-page">Next</button>
+  </div>
+</section>
 {% endblock %}

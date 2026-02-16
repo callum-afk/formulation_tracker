@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import get_auth_context
@@ -45,23 +45,9 @@ async def health() -> dict:
     return {"ok": True}
 
 @app.get("/")
-def root():
-    return {"status": "ok", "service": "formulation-tracker"}
-
-
-@app.get("/formulations")
-def formulations() -> dict:
-    return {
-        "ok": True,
-        "items": [
-            {
-                "set_code": "AB",
-                "weight_code": "AB",
-                "batch_variant_code": "AB",
-                "notes": "Stub formulation entry",
-            }
-        ],
-    }
+def root() -> RedirectResponse:
+    # Redirect legacy root requests to the ingredients UI route to keep browser entry consistent.
+    return RedirectResponse(url="/ingredients", status_code=307)
 
 app.include_router(ingredients_router)
 app.include_router(batches_router)
