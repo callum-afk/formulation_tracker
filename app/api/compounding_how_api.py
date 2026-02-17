@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, CompoundingHowCreate, CompoundingHowUpdate
 from app.services.bigquery_service import BigQueryService
-from app.services.codegen_service import int_to_code
+from app.services.codegen_service import code_to_int, int_to_code
 
 router = APIRouter(prefix="/api/compounding_how", tags=["compounding_how"])
 
@@ -56,6 +56,10 @@ def create_compounding_how(
 
     # Compose immutable processing code by appending generated process suffix to chosen location code.
     processing_code = f"{payload.location_code} {suffix}".strip()
+    # Prevent duplicate persisted processing codes while still allowing the same suffix on different locations.
+    if bigquery.processing_code_exists(processing_code):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Processing code already exists")
+
     bigquery.create_compounding_how(
         processing_code=processing_code,
         location_code=payload.location_code,
@@ -70,8 +74,11 @@ def create_compounding_how(
 
 @router.post("/allocate", response_model=ApiResponse)
 def allocate_process_suffix(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
-    # Allocate the next AB-style process suffix from code counters for collision-safe generation.
-    next_value = bigquery.allocate_counter("compounding_process_code", "", 1)
+    # Derive suffix from the latest submitted record so repeated "generate" clicks do not consume values.
+    last_suffix = bigquery.get_next_compounding_process_suffix()
+    if not last_suffix:
+        return ApiResponse(ok=True, data={"process_code_suffix": int_to_code(1)})
+    next_value = code_to_int(last_suffix) + 1
     return ApiResponse(ok=True, data={"process_code_suffix": int_to_code(next_value)})
 
 

@@ -90,6 +90,13 @@ def create_location_partner(
 
 
 
+@router.get("/formulations", response_model=ApiResponse)
+def list_location_formulations(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+    # Supply selectable formulation combinations for location-code creation UX.
+    items = bigquery.list_distinct_formulation_codes()
+    return ApiResponse(ok=True, data={"items": items})
+
+
 @router.get("", response_model=ApiResponse)
 def list_location_codes(
     page: int = Query(default=1, ge=1),
@@ -99,7 +106,26 @@ def list_location_codes(
 ) -> ApiResponse:
     # Return paginated location IDs with optional substring filtering on the full location code string.
     rows, total = bigquery.list_location_codes_paginated(page=page, page_size=page_size, q=(q or "").strip() or None)
-    return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
+
+    # Merge partner labels for human-readable table rendering without losing canonical stored partner codes.
+    partner_map = {partner["partner_code"]: partner for partner in DEFAULT_LOCATION_PARTNERS}
+    try:
+        for partner in bigquery.list_location_partners():
+            partner_map[partner["partner_code"]] = partner
+    except NotFound:
+        pass
+
+    normalized_rows = []
+    for row in rows:
+        partner = partner_map.get(row.get("partner_code"), {})
+        normalized_rows.append(
+            {
+                **row,
+                "partner_name": partner.get("partner_name") or "Unknown",
+                "machine_specification": partner.get("machine_specification") or "",
+            }
+        )
+    return ApiResponse(ok=True, data={"items": normalized_rows, "total": total, "page": page, "page_size": page_size})
 
 @router.post("", response_model=ApiResponse)
 def create_location_code(
@@ -116,6 +142,10 @@ def create_location_code(
         pass
     if payload.partner_code not in partner_codes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner code not found")
+
+    # Ensure location codes are only generated for formulations that actually exist in formulation records.
+    if not bigquery.formulation_exists(payload.set_code, payload.weight_code, payload.batch_variant_code):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Formulation not found")
 
     # Build the requested human-readable location ID format: AB AB AB AC 240827.
     location_id = (

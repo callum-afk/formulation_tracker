@@ -287,11 +287,51 @@ class BigQueryService:
         return None
 
     def find_ingredient_by_seq(self, seq: int) -> Optional[Dict[str, Any]]:
+        # Preserve compatibility for legacy callers that looked up a sequence without category scope.
         query = f"SELECT * FROM `{self.dataset}.ingredients` WHERE seq = @seq LIMIT 1"
         rows = self._run(query, [bigquery.ScalarQueryParameter("seq", "INT64", seq)]).result()
         for row in rows:
             return dict(row)
         return None
+
+    def find_ingredient_by_category_and_seq(self, category_code: int, seq: int) -> Optional[Dict[str, Any]]:
+        # Enforce uniqueness within category+sequence, matching the SKU structure <category>_<seq>_<pack_size>.
+        query = (
+            f"SELECT * FROM `{self.dataset}.ingredients` "
+            "WHERE category_code = @category_code AND seq = @seq LIMIT 1"
+        )
+        rows = self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("category_code", "INT64", category_code),
+                bigquery.ScalarQueryParameter("seq", "INT64", seq),
+            ],
+        ).result()
+        for row in rows:
+            return dict(row)
+        return None
+
+    def set_counter_at_least(self, counter_name: str, scope: str, minimum_next_value: int) -> None:
+        # Raise a counter floor without consuming a value so imported IDs are respected by later generated codes.
+        query = (
+            f"MERGE `{self.dataset}.code_counters` T "
+            "USING (SELECT @counter_name AS counter_name, @scope AS scope, @minimum_next_value AS minimum_next_value) S "
+            "ON T.counter_name = S.counter_name AND T.scope = S.scope "
+            "WHEN MATCHED THEN "
+            "  UPDATE SET next_value = IF(T.next_value < S.minimum_next_value, S.minimum_next_value, T.next_value), "
+            "             updated_at = CURRENT_TIMESTAMP() "
+            "WHEN NOT MATCHED THEN "
+            "  INSERT (counter_name, scope, next_value, updated_at) "
+            "  VALUES (S.counter_name, S.scope, S.minimum_next_value, CURRENT_TIMESTAMP())"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("counter_name", "STRING", counter_name),
+                bigquery.ScalarQueryParameter("scope", "STRING", scope),
+                bigquery.ScalarQueryParameter("minimum_next_value", "INT64", minimum_next_value),
+            ],
+        ).result()
 
     def list_ingredients(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         where = []
@@ -801,6 +841,34 @@ class BigQueryService:
             ],
         ).result()
 
+    def formulation_exists(self, set_code: str, weight_code: str, batch_variant_code: str) -> bool:
+        # Verify requested location-code formulation components reference an existing formulation record.
+        query = (
+            f"SELECT 1 FROM `{self.dataset}.v_formulations_flat` "
+            "WHERE set_code = @set_code AND weight_code = @weight_code AND batch_variant_code = @batch_variant_code "
+            "LIMIT 1"
+        )
+        rows = list(
+            self._run(
+                query,
+                [
+                    bigquery.ScalarQueryParameter("set_code", "STRING", set_code),
+                    bigquery.ScalarQueryParameter("weight_code", "STRING", weight_code),
+                    bigquery.ScalarQueryParameter("batch_variant_code", "STRING", batch_variant_code),
+                ],
+            ).result()
+        )
+        return bool(rows)
+
+    def list_distinct_formulation_codes(self) -> List[Dict[str, str]]:
+        # Provide unique formulation code parts for dropdown/manual assist in the location-code create form.
+        query = (
+            f"SELECT DISTINCT set_code, weight_code, batch_variant_code FROM `{self.dataset}.v_formulations_flat` "
+            "ORDER BY set_code, weight_code, batch_variant_code"
+        )
+        rows = self._run(query, []).result()
+        return [dict(row) for row in rows]
+
     def list_location_codes_paginated(
         self,
         page: int,
@@ -873,6 +941,28 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("updated_by", "STRING", created_by),
             ],
         ).result()
+
+    def get_next_compounding_process_suffix(self, start_value: int = 1) -> Optional[str]:
+        # Compute the next suffix from persisted submissions only, ignoring unsaved UI generations.
+        query = (
+            f"SELECT process_code_suffix FROM `{self.dataset}.compounding_how` "
+            "WHERE is_active = TRUE ORDER BY process_code_suffix DESC LIMIT 1"
+        )
+        rows = list(self._run(query, []).result())
+        if not rows:
+            return None
+        return rows[0].get("process_code_suffix")
+
+    def processing_code_exists(self, processing_code: str) -> bool:
+        # Allow API-layer conflict checks before inserting immutable processing codes.
+        query = (
+            f"SELECT 1 FROM `{self.dataset}.compounding_how` "
+            "WHERE processing_code = @processing_code AND is_active = TRUE LIMIT 1"
+        )
+        rows = list(
+            self._run(query, [bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code)]).result()
+        )
+        return bool(rows)
 
     def list_compounding_how(self) -> List[Dict[str, Any]]:
         # List active compounding records for the table below the form.

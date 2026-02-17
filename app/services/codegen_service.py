@@ -38,3 +38,12 @@ def parse_sku(sku: str) -> Tuple[int, int, int]:
     seq = int(sku[1:5])
     pack_size_value = int(sku[5:])
     return category_code, seq, pack_size_value
+
+
+
+def code_to_int(code: str) -> int:
+    # Convert a two-letter A-Z code back to its numeric index for counter-style comparisons.
+    normalized = (code or "").strip().upper()
+    if len(normalized) != 2 or not normalized.isalpha():
+        raise ValueError("code format should be two letters")
+    return (ord(normalized[0]) - 65) * 26 + (ord(normalized[1]) - 65)

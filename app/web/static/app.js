@@ -877,6 +877,23 @@ function createCopyTextBlock(copyValue, className = '') {
   return wrapper;
 }
 
+// Build table cell content that is both human-readable and directly clickable for external links.
+function createUrlCellContent(urlValue) {
+  const wrapper = document.createElement('div');
+  const value = (urlValue || '').toString().trim();
+  if (!value) {
+    wrapper.textContent = '';
+    return { wrapper, input: null };
+  }
+  const anchor = document.createElement('a');
+  anchor.href = value;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  anchor.textContent = value;
+  wrapper.appendChild(anchor);
+  return { wrapper, input: null };
+}
+
 // Render formulation rows with HTML rowspans so sku/weight/batch lines align like the reference.
 function renderFormulationsTable(output, items) {
   clearElement(output);
@@ -1057,6 +1074,11 @@ function formatDateToYyMmDd(dateValue) {
 function attachLocationCodePage() {
   const locationForm = document.getElementById('location-code-form');
   if (!locationForm) return;
+  const formulationSelect = document.getElementById('location-formulation-select');
+  const formulationManual = document.getElementById('location-formulation-manual');
+  const setCodeInput = document.getElementById('location-set-code');
+  const weightCodeInput = document.getElementById('location-weight-code');
+  const batchCodeInput = document.getElementById('location-batch-code');
   const partnerSelect = document.getElementById('location-partner-select');
   const dateInput = document.getElementById('location-production-date');
   const dateCodeInput = document.getElementById('location-production-code');
@@ -1069,6 +1091,37 @@ function attachLocationCodePage() {
   const pageSize = 10;
   let page = 1;
   let lastTotal = 0;
+
+  // Keep the three AB fields synchronized with either dropdown selection or pasted manual formulation text.
+  function applyFormulationCode(rawCode) {
+    const parts = (rawCode || '').toString().trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if (!parts.length) return;
+    if (parts.length !== 3 || !parts.every((part) => /^[A-Z]{2}$/.test(part))) {
+      throw new Error('Formulation code must be exactly three two-letter parts, e.g. AB AB AC.');
+    }
+    setCodeInput.value = parts[0];
+    weightCodeInput.value = parts[1];
+    batchCodeInput.value = parts[2];
+  }
+
+  // Populate formulation dropdown options from active formulation combinations.
+  async function loadFormulations() {
+    const data = await fetchJson('/api/location_codes/formulations');
+    const items = data.items || [];
+    if (!formulationSelect) return;
+    clearElement(formulationSelect);
+    const first = document.createElement('option');
+    first.value = '';
+    first.textContent = 'Select formulation';
+    formulationSelect.appendChild(first);
+    items.forEach((item) => {
+      const code = [item.set_code, item.weight_code, item.batch_variant_code].filter(Boolean).join(' ');
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = code;
+      formulationSelect.appendChild(option);
+    });
+  }
 
   // Fetch and render partner-name-first dropdown options with code metadata for location generation.
   async function loadPartners() {
@@ -1092,7 +1145,7 @@ function attachLocationCodePage() {
     });
   }
 
-  // Render paginated location code table rows with inline copy controls and optional server-side filtering.
+  // Render paginated location code table rows with owner, partner label, and creation date metadata.
   async function loadLocationCodes(targetPage) {
     const params = new URLSearchParams();
     params.set('page', String(targetPage));
@@ -1110,7 +1163,7 @@ function attachLocationCodePage() {
     if (!items.length) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 1;
+      cell.colSpan = 4;
       cell.textContent = 'No location codes found.';
       row.appendChild(cell);
       tableBody.appendChild(row);
@@ -1119,7 +1172,14 @@ function attachLocationCodePage() {
         const row = document.createElement('tr');
         const locationCell = document.createElement('td');
         locationCell.appendChild(createCopyTextBlock(item.location_id || '', 'location-copy'));
-        row.append(locationCell);
+        const ownerCell = document.createElement('td');
+        ownerCell.textContent = item.created_by || 'Unknown';
+        const partnerCell = document.createElement('td');
+        const machineSpecification = (item.machine_specification || '').toString().trim();
+        partnerCell.textContent = machineSpecification ? `${item.partner_name || 'Unknown'} (${machineSpecification})` : (item.partner_name || 'Unknown');
+        const createdCell = document.createElement('td');
+        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        row.append(locationCell, ownerCell, partnerCell, createdCell);
         tableBody.appendChild(row);
       });
     }
@@ -1131,6 +1191,27 @@ function attachLocationCodePage() {
   dateInput.addEventListener('input', () => {
     dateCodeInput.value = formatDateToYyMmDd(dateInput.value);
   });
+
+  if (formulationSelect) {
+    formulationSelect.addEventListener('change', () => {
+      try {
+        applyFormulationCode(formulationSelect.value);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  }
+
+  if (formulationManual) {
+    formulationManual.addEventListener('change', () => {
+      if (!(formulationManual.value || '').trim()) return;
+      try {
+        applyFormulationCode(formulationManual.value);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
+  }
 
   // Submit location ID creation payload and refresh the listing from the first page.
   locationForm.addEventListener('submit', async (event) => {
@@ -1187,7 +1268,7 @@ function attachLocationCodePage() {
     });
   }
 
-  loadPartners().catch((error) => alert(error.message));
+  Promise.all([loadFormulations(), loadPartners()]).catch((error) => alert(error.message));
   loadLocationCodes(1).catch((error) => alert(error.message));
 }
 
@@ -1326,6 +1407,15 @@ function attachCompoundingHowPage() {
       machineInput.value = item.machine_setup_url || '';
       machineInput.disabled = true;
       machineCell.appendChild(machineInput);
+      // Provide an explicit clickable anchor so operators can open links directly from the table.
+      if ((item.machine_setup_url || '').trim()) {
+        const openMachineLink = document.createElement('a');
+        openMachineLink.href = item.machine_setup_url;
+        openMachineLink.target = '_blank';
+        openMachineLink.rel = 'noopener noreferrer';
+        openMachineLink.textContent = 'Open';
+        machineCell.appendChild(openMachineLink);
+      }
 
       const processedCell = document.createElement('td');
       const processedInput = document.createElement('input');
@@ -1333,6 +1423,15 @@ function attachCompoundingHowPage() {
       processedInput.value = item.processed_data_url || '';
       processedInput.disabled = true;
       processedCell.appendChild(processedInput);
+      // Provide an explicit clickable anchor so operators can open links directly from the table.
+      if ((item.processed_data_url || '').trim()) {
+        const openProcessedLink = document.createElement('a');
+        openProcessedLink.href = item.processed_data_url;
+        openProcessedLink.target = '_blank';
+        openProcessedLink.rel = 'noopener noreferrer';
+        openProcessedLink.textContent = 'Open';
+        processedCell.appendChild(openProcessedLink);
+      }
 
       const actionCell = document.createElement('td');
       const editButton = document.createElement('button');
@@ -1404,10 +1503,10 @@ function attachCompoundingHowPage() {
         machine_setup_url: (formData.get('machine_setup_url') || '').toString().trim(),
         processed_data_url: (formData.get('processed_data_url') || '').toString().trim(),
       });
+      form.reset();
+      // After save, fetch the next submitted-based suffix and restore preview helpers.
       const allocated = await postJson('/api/compounding_how/allocate', {});
       suffixInput.value = allocated.process_code_suffix || '';
-      updatePreview();
-      form.reset();
       updatePreview();
       await loadItems();
     } catch (error) {
