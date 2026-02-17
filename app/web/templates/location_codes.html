@@ -5,16 +5,13 @@
   <form id="location-code-form" class="form-stack">
     <div class="grid">
       <label>Formulation (dropdown)
-        <select id="location-formulation-select">
+        <select id="location-formulation-select" name="formulation_select">
           <option value="">Select formulation</option>
         </select>
       </label>
       <label>Formulation code (manual)
-        <input id="location-formulation-manual" placeholder="AB AB AC" />
+        <input id="location-formulation-manual" name="formulation_manual" placeholder="AB AB AC" />
       </label>
-      <label>Set code <input name="set_code" id="location-set-code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
-      <label>Weight code <input name="weight_code" id="location-weight-code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
-      <label>Batch variant code <input name="batch_variant_code" id="location-batch-code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
       <label>Compounding partner
         <select name="partner_code" id="location-partner-select" required>
           <option value="">Select partner</option>

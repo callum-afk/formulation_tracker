@@ -351,6 +351,21 @@ table tbody tr:hover td {
   background: color-mix(in srgb, var(--color-moss-300) 24%, white);
 }
 
+/* Formulations table hover is scoped to SKU detail cells so rowspanned metadata columns do not bleed. */
+.formulations-table tbody tr:hover td {
+  background: transparent;
+}
+
+/* Highlight only SKU, dry weight, and batch cells for consistent per-line hover behavior. */
+.formulations-table tbody tr:hover td.formulation-detail-cell {
+  background: color-mix(in srgb, var(--color-moss-300) 24%, white);
+}
+
+/* Keep location table metadata text color explicit to avoid UA defaults overriding theme colors. */
+#location-codes-results tbody td {
+  color: var(--color-ink-900);
+}
+
 /* INCI link styling is specialized to preserve visual distinction inside dense labels. */
 .inci-link {
   color: var(--color-ink-900);

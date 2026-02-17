@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
 
@@ -862,12 +863,21 @@ class BigQueryService:
 
     def list_distinct_formulation_codes(self) -> List[Dict[str, str]]:
         # Provide unique formulation code parts for dropdown/manual assist in the location-code create form.
-        query = (
+        primary_query = (
             f"SELECT DISTINCT set_code, weight_code, batch_variant_code FROM `{self.dataset}.v_formulations_flat` "
             "ORDER BY set_code, weight_code, batch_variant_code"
         )
-        rows = self._run(query, []).result()
-        return [dict(row) for row in rows]
+        try:
+            rows = self._run(primary_query, []).result()
+            return [dict(row) for row in rows]
+        except NotFound:
+            # Fall back to the base batch-variant table when the flat view is temporarily missing in a region.
+            fallback_query = (
+                f"SELECT DISTINCT set_code, weight_code, batch_variant_code FROM `{self.dataset}.batch_variants` "
+                "ORDER BY set_code, weight_code, batch_variant_code"
+            )
+            rows = self._run(fallback_query, []).result()
+            return [dict(row) for row in rows]
 
     def list_location_codes_paginated(
         self,
