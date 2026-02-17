@@ -25,7 +25,11 @@ def get_actor(request: Request) -> AuthContext:
 
 
 def init_services(settings: Settings) -> tuple[BigQueryService, StorageService]:
-    bigquery = BigQueryService(project_id=settings.project_id, dataset_id=settings.dataset_id)
+    bigquery = BigQueryService(
+        project_id=settings.project_id,
+        dataset_id=settings.dataset_id,
+        bq_location=settings.bq_location,
+    )
     storage = StorageService(
         project_id=settings.project_id,
         bucket_msds=settings.bucket_msds,

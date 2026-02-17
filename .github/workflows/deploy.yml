@@ -35,4 +35,5 @@ jobs:
           gcloud run deploy ${{ secrets.CLOUD_RUN_SERVICE_NAME }} \
             --image ${{ secrets.ARTIFACT_REGISTRY_IMAGE }}:$GITHUB_SHA \
             --region ${{ secrets.REGION }} \
-            --platform managed
+            --platform managed \
+            --set-env-vars BQ_LOCATION=EU

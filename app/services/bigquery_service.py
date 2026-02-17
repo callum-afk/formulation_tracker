@@ -2,42 +2,127 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from google.cloud import bigquery
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 @dataclass
 class BigQueryService:
     project_id: str
     dataset_id: str
+    bq_location: str = "EU"
 
     def __post_init__(self) -> None:
+        # Create one shared BigQuery client for the service lifecycle to reuse pooled transport connections.
         self.client = bigquery.Client(project=self.project_id)
+        # Normalize the configured location once so all query paths consistently target the same BigQuery region.
+        self.bq_location = (self.bq_location or os.getenv("BQ_LOCATION", "EU")).strip() or "EU"
 
     @property
     def dataset(self) -> str:
+        # Build the fully-qualified dataset reference used throughout all SQL statements.
         return f"{self.project_id}.{self.dataset_id}"
 
     def _run(self, query: str, params: Sequence[bigquery.ScalarQueryParameter]) -> bigquery.job.QueryJob:
-        # Force US location to avoid cross-region errors when this dataset is provisioned in US.
+        # Always pass the same location on query creation to prevent location mismatch errors across environments.
         job_config = bigquery.QueryJobConfig(query_parameters=list(params))
-        location = os.getenv("BQ_LOCATION") or os.getenv("REGION") or None
-        return self.client.query(query, job_config=job_config, location=location)
+        return self.client.query(query, job_config=job_config, location=self.bq_location)
+
+    def _render_sql(self, raw_sql: str) -> str:
+        # Resolve template placeholders so infra SQL files can remain environment-agnostic in source control.
+        return raw_sql.replace("PROJECT_ID", self.project_id).replace("DATASET_ID", self.dataset_id)
+
+    def _run_sql_file(self, sql_file: Path) -> None:
+        # Read and render one SQL file before splitting into statements for idempotent sequential execution.
+        rendered = self._render_sql(sql_file.read_text(encoding="utf-8"))
+        # Execute each non-empty statement separately so one file can contain multi-statement migrations.
+        for statement in (part.strip() for part in rendered.split(";") if part.strip()):
+            self._run(statement, []).result()
+
+    def ensure_tables(self) -> None:
+        # Apply schema + seed + views in deterministic order so startup repairs drift in empty or partially built datasets.
+        ordered_files = [
+            Path("infra/bigquery/ddl/001_create_tables.sql"),
+            Path("infra/bigquery/ddl/002_seed_counters.sql"),
+            Path("infra/bigquery/views/101_views.sql"),
+        ]
+        # Log effective migration context to make region/debug issues obvious in Cloud Run startup logs.
+        LOGGER.info(
+            "Ensuring BigQuery schema project=%s dataset=%s location=%s",
+            self.project_id,
+            self.dataset_id,
+            self.bq_location,
+        )
+        # Execute the required baseline files first, then run remaining DDL files for additive backfill migrations.
+        for sql_file in ordered_files:
+            if sql_file.exists():
+                self._run_sql_file(sql_file)
+
+        # Include any additional DDL files not in the baseline list so later migrations are also applied at startup.
+        baseline_names = {path.name for path in ordered_files}
+        for sql_file in sorted(Path("infra/bigquery/ddl").glob("*.sql")):
+            if sql_file.name in baseline_names:
+                continue
+            self._run_sql_file(sql_file)
+
+        # Validate critical runtime columns immediately so schema drift fails fast with an actionable message.
+        self.validate_required_schema()
+        LOGGER.info("BigQuery startup migration completed")
 
     def run_startup_sql(self) -> None:
-        # Execute DDL migrations and view definitions in lexical order so deploys self-heal missing schema objects.
-        sql_roots = [Path("infra/bigquery/ddl"), Path("infra/bigquery/views")]
-        for root in sql_roots:
-            if not root.exists():
+        # Keep the legacy startup method as a compatibility wrapper while delegating to ensure_tables.
+        self.ensure_tables()
+
+    def validate_required_schema(self) -> None:
+        # Enumerate the minimum table->columns contract required by API/service query paths.
+        required_columns = {
+            "ingredients": {
+                "sku", "category_code", "seq", "pack_size_value", "pack_size_unit", "trade_name_inci", "supplier", "spec_grade", "format", "created_at", "updated_at", "created_by", "updated_by", "is_active", "msds_object_path", "msds_filename", "msds_content_type", "msds_uploaded_at",
+            },
+            "ingredient_batches": {
+                "sku", "ingredient_batch_code", "received_at", "notes", "quantity_value", "quantity_unit", "created_at", "updated_at", "created_by", "updated_by", "is_active", "spec_object_path", "spec_uploaded_at",
+            },
+            "location_partners": {"partner_code", "partner_name", "machine_specification", "created_at", "created_by"},
+            "location_codes": {"set_code", "weight_code", "batch_variant_code", "partner_code", "production_date", "location_id", "created_at", "created_by"},
+            "compounding_how": {"processing_code", "location_code", "process_code_suffix", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
+            "code_counters": {"counter_name", "scope", "next_value", "updated_at"},
+        }
+
+        # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
+        rows = self._run(
+            (
+                f"SELECT table_name, column_name FROM `{self.dataset}.INFORMATION_SCHEMA.COLUMNS` "
+                "WHERE table_name IN UNNEST(@table_names)"
+            ),
+            [bigquery.ArrayQueryParameter("table_names", "STRING", list(required_columns.keys()))],
+        ).result()
+
+        table_columns: Dict[str, set[str]] = {}
+        for row in rows:
+            table_columns.setdefault(row["table_name"], set()).add(row["column_name"])
+
+        # Accumulate all missing-table and missing-column issues so startup surfaces one complete actionable error.
+        problems: List[str] = []
+        for table_name, required in required_columns.items():
+            existing = table_columns.get(table_name)
+            if not existing:
+                problems.append(f"missing table `{table_name}`")
                 continue
-            for sql_file in sorted(root.glob("*.sql")):
-                sql = sql_file.read_text(encoding="utf-8")
-                rendered = sql.replace("PROJECT_ID", self.project_id).replace("DATASET_ID", self.dataset_id)
-                # Split on statement terminators so multi-statement migration files can run sequentially.
-                for statement in (part.strip() for part in rendered.split(";") if part.strip()):
-                    self._run(statement, []).result()
+            missing_columns = sorted(required - existing)
+            if missing_columns:
+                problems.append(f"table `{table_name}` missing columns: {', '.join(missing_columns)}")
+
+        if problems:
+            message = "BigQuery schema validation failed: " + "; ".join(problems)
+            LOGGER.error(message)
+            raise RuntimeError(message)
 
     def allocate_counter(self, counter_name: str, scope: str, start_value: int) -> int:
         for _ in range(10):
