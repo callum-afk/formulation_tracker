@@ -17,13 +17,23 @@ LOGGER = logging.getLogger(__name__)
 class BigQueryService:
     project_id: str
     dataset_id: str
-    bq_location: str = "EU"
+    bq_location: Optional[str] = None
 
     def __post_init__(self) -> None:
         # Create one shared BigQuery client for the service lifecycle to reuse pooled transport connections.
         self.client = bigquery.Client(project=self.project_id)
-        # Normalize the configured location once so all query paths consistently target the same BigQuery region.
-        self.bq_location = (self.bq_location or os.getenv("BQ_LOCATION", "EU")).strip() or "EU"
+
+    def _resolve_query_location(self) -> Optional[str]:
+        # Build an ordered list of location candidates so explicit constructor config wins over environment defaults.
+        raw_candidates = [self.bq_location, os.getenv("BQ_LOCATION"), os.getenv("REGION")]
+        # Strip candidate values and ignore blank entries so accidental empty env vars do not break query execution.
+        candidates = [value.strip() for value in raw_candidates if value and value.strip()]
+        # Choose the first non-empty location value, keeping None when no location is configured.
+        location = candidates[0] if candidates else None
+        # Force an EU-safe default when the dataset appears to be EU-scoped but no explicit location is configured.
+        if location is None and (self.dataset_id.lower().endswith("_eu") or "_eu_" in self.dataset_id.lower() or self.dataset_id.lower().endswith("eu")):
+            location = "europe-west2"
+        return location
 
     @property
     def dataset(self) -> str:
@@ -31,9 +41,12 @@ class BigQueryService:
         return f"{self.project_id}.{self.dataset_id}"
 
     def _run(self, query: str, params: Sequence[bigquery.ScalarQueryParameter]) -> bigquery.job.QueryJob:
-        # Always pass the same location on query creation to prevent location mismatch errors across environments.
+        # Resolve the query location for each execution so runtime env updates are respected consistently.
+        location = self._resolve_query_location()
+        # Construct a query job config for typed parameters only; location must be passed to client.query itself.
         job_config = bigquery.QueryJobConfig(query_parameters=list(params))
-        return self.client.query(query, job_config=job_config, location=self.bq_location)
+        # Execute every query through a single helper path so all jobs target the same explicit BigQuery region.
+        return self.client.query(query, job_config=job_config, location=location)
 
     def _render_sql(self, raw_sql: str) -> str:
         # Resolve template placeholders so infra SQL files can remain environment-agnostic in source control.
@@ -58,7 +71,7 @@ class BigQueryService:
             "Ensuring BigQuery schema project=%s dataset=%s location=%s",
             self.project_id,
             self.dataset_id,
-            self.bq_location,
+            self._resolve_query_location(),
         )
         # Execute the required baseline files first, then run remaining DDL files for additive backfill migrations.
         for sql_file in ordered_files:

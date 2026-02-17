@@ -15,9 +15,9 @@ uvicorn app.main:app --reload
 
 Required:
 - `PROJECT_ID`
-- `DATASET_ID`
-- `REGION`
-- `BQ_LOCATION` (set to `EU` for `formulation_app_eu`)
+- `DATASET_ID` (set to `formulation_app_eu` in EU production)
+- `REGION` (set to `europe-west2` in EU production)
+- `BQ_LOCATION` (set to `europe-west2` in EU production)
 - `BUCKET_MSDS`
 - `BUCKET_SPECS`
 - `CLOUD_RUN_SERVICE_NAME`
@@ -40,5 +40,5 @@ Optional:
 - `AUTH_MODE=cloudrun` expects an `Authorization: Bearer <identity-token>` header and reads `email` (or `sub`) from the JWT payload.
 - `AUTH_MODE=iap` expects `X-Goog-Authenticated-User-Email` and remains compatible with IAP/header-based auth.
 - `AUTH_MODE=none` allows unauthenticated access and uses an `unknown` actor for audit fields.
-- For Cloud Run deployment, ensure `AUTH_MODE=cloudrun` plus required vars: `PROJECT_ID`, `DATASET_ID`, `BUCKET_MSDS`, `BUCKET_SPECS`, and `CLOUD_RUN_SERVICE_NAME` plus `BQ_LOCATION=EU`.
+- For Cloud Run deployment, ensure `AUTH_MODE=cloudrun` plus required vars: `PROJECT_ID`, `DATASET_ID=formulation_app_eu`, `REGION=europe-west2`, `BQ_LOCATION=europe-west2`, `BUCKET_MSDS`, `BUCKET_SPECS`, and `CLOUD_RUN_SERVICE_NAME`.
 - BigQuery counters are implemented with an optimistic concurrency update loop to avoid collisions for low-concurrency internal usage.
