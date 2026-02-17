@@ -10,6 +10,7 @@ import subprocess
 class Settings:
     project_id: str
     dataset_id: str
+    bq_location: str
     region: str
     bucket_msds: str
     bucket_specs: str
@@ -66,6 +67,7 @@ def load_settings() -> Settings:
     return Settings(
         project_id=_get_env("PROJECT_ID"),
         dataset_id=_get_env("DATASET_ID"),
+        bq_location=os.getenv("BQ_LOCATION", "EU"),
         region=_get_env("REGION"),
         bucket_msds=_get_env("BUCKET_MSDS"),
         bucket_specs=_get_env("BUCKET_SPECS"),

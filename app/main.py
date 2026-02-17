@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +18,9 @@ from app.api.location_codes_api import router as location_codes_router
 from app.api.compounding_how_api import router as compounding_how_router
 from app.web.routes import router as web_router
 
+LOGGER = logging.getLogger(__name__)
+
+
 app = FastAPI(title="Formulation Tracker")
 
 
@@ -23,8 +28,15 @@ app = FastAPI(title="Formulation Tracker")
 def startup() -> None:
     settings = init_settings()
     bigquery, storage = init_services(settings)
-    # Run startup DDL and views so new tables/views exist after each deploy in Cloud Run.
-    bigquery.run_startup_sql()
+    # Log startup BigQuery context so region misconfiguration can be diagnosed from Cloud Run logs quickly.
+    LOGGER.info(
+        "Starting app with BigQuery project=%s dataset=%s location=%s",
+        settings.project_id,
+        settings.dataset_id,
+        settings.bq_location,
+    )
+    # Run idempotent startup migrations so required tables/views/counters exist before serving requests.
+    bigquery.ensure_tables()
     app.state.settings = settings
     app.state.bigquery = bigquery
     app.state.storage = storage
