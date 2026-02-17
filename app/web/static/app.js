@@ -834,16 +834,28 @@ function attachBatchVariantLookupForm() {
 }
 
 // Build per-SKU map so formulation arrays can be aligned by sku key for rowspans.
-function mapItemsBySku(items, valueKey) {
+function mapItemsBySku(items, valueKey, skuList = []) {
   const map = new Map();
-  if (!Array.isArray(items)) {
+  // Handle array payloads from BigQuery views where each entry is an object (or struct-like value).
+  if (Array.isArray(items)) {
+    items.forEach((item, index) => {
+      const fallbackSku = skuList[index];
+      const sku = (item?.sku || fallbackSku || '').toString().trim();
+      if (!sku) return;
+      const value = item && typeof item === 'object' && valueKey in item ? item[valueKey] : item;
+      map.set(sku, value);
+    });
     return map;
   }
-  items.forEach((item) => {
-    const sku = item?.sku;
-    if (!sku) return;
-    map.set(sku, item[valueKey]);
-  });
+  // Handle object payloads keyed by SKU in case an environment serializes maps as JSON objects.
+  if (items && typeof items === 'object') {
+    Object.entries(items).forEach(([rawSku, rawValue]) => {
+      const sku = (rawSku || '').toString().trim();
+      if (!sku) return;
+      const value = rawValue && typeof rawValue === 'object' && valueKey in rawValue ? rawValue[valueKey] : rawValue;
+      map.set(sku, value);
+    });
+  }
   return map;
 }
 
@@ -898,6 +910,8 @@ function createUrlCellContent(urlValue) {
 function renderFormulationsTable(output, items) {
   clearElement(output);
   const table = document.createElement('table');
+  // Mark this table so CSS can target formulation hover behavior without affecting other tables.
+  table.classList.add('formulations-table');
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
   ['Formulation', 'Created', 'Owner', 'SKU Count', 'SKUs', 'Dry Weights (%)', 'Batches'].forEach((label) => {
@@ -923,8 +937,10 @@ function renderFormulationsTable(output, items) {
 
   items.forEach((item) => {
     const skuList = Array.isArray(item.sku_list) ? item.sku_list : parseList(item.sku_list || '');
-    const weightMap = mapItemsBySku(item.dry_weight_items, 'wt_percent');
-    const batchMap = mapItemsBySku(item.batch_items, 'ingredient_batch_code');
+    // Align dry weights by SKU with a fallback to sku_list ordering to avoid index/key mismatches.
+    const weightMap = mapItemsBySku(item.dry_weight_items, 'wt_percent', skuList);
+    // Align batch codes by SKU in the same way so each SKU row shows the matching batch.
+    const batchMap = mapItemsBySku(item.batch_items, 'ingredient_batch_code', skuList);
     const displaySkus = skuList.length ? skuList : ['—'];
     const lineCount = displaySkus.length;
     const formulationCode = [item.set_code || '', item.weight_code || '', item.batch_variant_code || ''].join(' ').trim();
@@ -956,10 +972,13 @@ function renderFormulationsTable(output, items) {
       }
 
       const skuCell = document.createElement('td');
+      skuCell.classList.add('formulation-detail-cell');
       skuCell.textContent = sku;
       const weightCell = document.createElement('td');
+      weightCell.classList.add('formulation-detail-cell');
       weightCell.textContent = sku === '—' ? '—' : formatPercent(weightMap.get(sku));
       const batchCell = document.createElement('td');
+      batchCell.classList.add('formulation-detail-cell');
       batchCell.textContent = sku === '—' ? '—' : (batchMap.get(sku) || '');
       row.appendChild(skuCell);
       row.appendChild(weightCell);
@@ -1076,9 +1095,6 @@ function attachLocationCodePage() {
   if (!locationForm) return;
   const formulationSelect = document.getElementById('location-formulation-select');
   const formulationManual = document.getElementById('location-formulation-manual');
-  const setCodeInput = document.getElementById('location-set-code');
-  const weightCodeInput = document.getElementById('location-weight-code');
-  const batchCodeInput = document.getElementById('location-batch-code');
   const partnerSelect = document.getElementById('location-partner-select');
   const dateInput = document.getElementById('location-production-date');
   const dateCodeInput = document.getElementById('location-production-code');
@@ -1092,22 +1108,20 @@ function attachLocationCodePage() {
   let page = 1;
   let lastTotal = 0;
 
-  // Keep the three AB fields synchronized with either dropdown selection or pasted manual formulation text.
-  function applyFormulationCode(rawCode) {
+  // Parse the formulation code from dropdown/manual input and enforce AB AB AC formatting.
+  function parseFormulationCode(rawCode) {
     const parts = (rawCode || '').toString().trim().toUpperCase().split(/\s+/).filter(Boolean);
-    if (!parts.length) return;
+    if (!parts.length) return null;
     if (parts.length !== 3 || !parts.every((part) => /^[A-Z]{2}$/.test(part))) {
       throw new Error('Formulation code must be exactly three two-letter parts, e.g. AB AB AC.');
     }
-    setCodeInput.value = parts[0];
-    weightCodeInput.value = parts[1];
-    batchCodeInput.value = parts[2];
+    return { set_code: parts[0], weight_code: parts[1], batch_variant_code: parts[2] };
   }
 
   // Populate formulation dropdown options from active formulation combinations.
   async function loadFormulations() {
     const data = await fetchJson('/api/location_codes/formulations');
-    const items = data.items || [];
+    const items = Array.isArray(data.items) ? data.items : [];
     if (!formulationSelect) return;
     clearElement(formulationSelect);
     const first = document.createElement('option');
@@ -1115,7 +1129,8 @@ function attachLocationCodePage() {
     first.textContent = 'Select formulation';
     formulationSelect.appendChild(first);
     items.forEach((item) => {
-      const code = [item.set_code, item.weight_code, item.batch_variant_code].filter(Boolean).join(' ');
+      // Support both snake_case and camelCase key names from different backend serializers.
+      const code = [item.set_code || item.setCode, item.weight_code || item.weightCode, item.batch_variant_code || item.batchVariantCode].filter(Boolean).join(' ');
       const option = document.createElement('option');
       option.value = code;
       option.textContent = code;
@@ -1155,7 +1170,7 @@ function attachLocationCodePage() {
       if (query) params.set('q', query);
     }
     const data = await fetchJson(`/api/location_codes?${params.toString()}`);
-    const items = data.items || [];
+    const items = Array.isArray(data.items) ? data.items : [];
     page = Number(data.page || targetPage);
     lastTotal = Number(data.total || 0);
     clearElement(tableBody);
@@ -1194,10 +1209,9 @@ function attachLocationCodePage() {
 
   if (formulationSelect) {
     formulationSelect.addEventListener('change', () => {
-      try {
-        applyFormulationCode(formulationSelect.value);
-      } catch (error) {
-        alert(error.message);
+      // Mirror dropdown selection into the manual field so one visible source of truth is submitted.
+      if (formulationManual) {
+        formulationManual.value = formulationSelect.value || '';
       }
     });
   }
@@ -1206,7 +1220,8 @@ function attachLocationCodePage() {
     formulationManual.addEventListener('change', () => {
       if (!(formulationManual.value || '').trim()) return;
       try {
-        applyFormulationCode(formulationManual.value);
+        // Validate manual value eagerly to surface formatting errors before form submit.
+        parseFormulationCode(formulationManual.value);
       } catch (error) {
         alert(error.message);
       }
@@ -1220,10 +1235,16 @@ function attachLocationCodePage() {
     let payload;
     try {
       // Validate all AB-style code fields and normalize to uppercase for consistent location IDs.
+      const preferredFormulationCode = (formData.get('formulation_manual') || '').toString().trim()
+        || (formData.get('formulation_select') || '').toString().trim()
+        || (formulationManual?.value || '').toString().trim()
+        || (formulationSelect?.value || '').toString().trim();
+      const parsedFormulation = parseFormulationCode(preferredFormulationCode);
+      if (!parsedFormulation) {
+        throw new Error('Select a formulation or enter a formulation code manually.');
+      }
       payload = {
-        set_code: normalizeTwoLetterCode(formData.get('set_code')),
-        weight_code: normalizeTwoLetterCode(formData.get('weight_code')),
-        batch_variant_code: normalizeTwoLetterCode(formData.get('batch_variant_code')),
+        ...parsedFormulation,
         partner_code: normalizeTwoLetterCode(formData.get('partner_code')),
         production_date: formatDateToYyMmDd((formData.get('production_date') || '').toString()),
       };
