@@ -1,3 +1,9 @@
+// Shared default page size used by every paginated table workflow in the web UI.
+const DEFAULT_PAGE_SIZE = 50;
+
+// Shared selectable page sizes so users can tune table density consistently across pages.
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+
 async function postJson(url, payload) {
   // Submit JSON payloads and gracefully surface non-JSON server errors.
   const response = await fetch(url, {
@@ -84,7 +90,9 @@ function buildTable(container, headers, rows, emptyMessage) {
   table.appendChild(tbody);
   clearElement(container);
   container.appendChild(table);
+  decorateReusableTable(table, 0);
 }
+
 
 function formatPercent(value) {
   if (value === null || value === undefined || value === '') {
@@ -129,6 +137,59 @@ function updatePagerControls({ prevButton, nextButton, label, page, total, pageS
     nextButton.disabled = page >= totalPages;
   }
   return totalPages;
+
+
+// Wrap a table with the reusable scroll shell and apply sticky first-column behavior.
+function decorateReusableTable(table, stickyColumnIndex = 0) {
+  if (!table) return;
+  table.classList.add('js-reusable-table');
+  const parent = table.parentElement;
+  if (parent && !parent.classList.contains('table-scroll-shell')) {
+    const shell = document.createElement('div');
+    shell.className = 'table-scroll-shell';
+    parent.insertBefore(shell, table);
+    shell.appendChild(table);
+  }
+  const headRows = Array.from(table.querySelectorAll('thead tr'));
+  headRows.forEach((row) => {
+    const cells = row.children;
+    if (cells[stickyColumnIndex]) {
+      cells[stickyColumnIndex].classList.add('sticky-first-col');
+    }
+  });
+  const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+  bodyRows.forEach((row) => {
+    const cells = row.children;
+    if (cells[stickyColumnIndex]) {
+      cells[stickyColumnIndex].classList.add('sticky-first-col');
+    }
+  });
+}
+
+// Build a shared page-size selector and wire it to table reload callbacks for consistency.
+function ensurePageSizeSelector(container, currentSize, onChange) {
+  if (!container) return;
+  let select = container.querySelector('.js-page-size-select');
+  if (!select) {
+    const label = document.createElement('label');
+    label.textContent = 'Rows per page';
+    select = document.createElement('select');
+    select.className = 'js-page-size-select';
+    PAGE_SIZE_OPTIONS.forEach((size) => {
+      const option = document.createElement('option');
+      option.value = String(size);
+      option.textContent = String(size);
+      select.appendChild(option);
+    });
+    label.appendChild(select);
+    container.appendChild(label);
+    container.classList.add('table-pagination-controls');
+    select.addEventListener('change', () => {
+      onChange(Number(select.value));
+    });
+  }
+  select.value = String(currentSize);
+}
 }
 
 function attachIngredientForm() {
@@ -289,7 +350,8 @@ function attachBatchLookupForm() {
   const prevButton = document.getElementById('batches-prev-page');
   const nextButton = document.getElementById('batches-next-page');
   const pageLabel = document.getElementById('batches-page-label');
-  const pageSize = 10;
+  const paginationContainer = document.getElementById('batches-pagination');
+  let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
 
@@ -382,6 +444,8 @@ function attachBatchLookupForm() {
       total: lastTotal,
       pageSize,
     });
+    const table = output.closest('table');
+    decorateReusableTable(table, 0);
   }
 
   // Start from page 1 whenever the user submits new filter values.
@@ -411,6 +475,12 @@ function attachBatchLookupForm() {
     });
   }
 
+  // Add shared page-size control for consistent pagination UX.
+  ensurePageSizeSelector(paginationContainer, pageSize, (nextSize) => {
+    pageSize = nextSize;
+    loadBatches(1).catch((error) => alert(error.message));
+  });
+
   // Load the initial all-batches page on first render for immediate visibility.
   loadBatches(1).catch((error) => {
     alert(error.message);
@@ -428,7 +498,8 @@ function attachSetForm() {
   const prevButton = document.getElementById('sets-prev-page');
   const nextButton = document.getElementById('sets-next-page');
   const pageLabel = document.getElementById('sets-page-label');
-  const pageSize = 10;
+  const paginationContainer = document.getElementById('sets-pagination');
+  let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
 
@@ -505,6 +576,8 @@ function attachSetForm() {
     }
 
     updatePagerControls({ prevButton, nextButton, label: pageLabel, page, total: lastTotal, pageSize });
+    const table = output.closest('table');
+    decorateReusableTable(table, 0);
   }
 
   // Restart pagination when search filters are changed and submitted.
@@ -531,6 +604,12 @@ function attachSetForm() {
       loadSets(page + 1).catch((error) => alert(error.message));
     });
   }
+
+  // Add shared page-size control for consistent pagination UX.
+  ensurePageSizeSelector(paginationContainer, pageSize, (nextSize) => {
+    pageSize = nextSize;
+    loadSets(1).catch((error) => alert(error.message));
+  });
 
   // Load the first page immediately so existing sets are always visible by default.
   loadSets(1).catch((error) => {
@@ -932,6 +1011,7 @@ function renderFormulationsTable(output, items) {
     tbody.appendChild(row);
     table.appendChild(tbody);
     output.appendChild(table);
+    decorateReusableTable(table, 0);
     return;
   }
 
@@ -1000,7 +1080,8 @@ function attachFormulationsFilterForm() {
   const prevButton = document.getElementById('formulations-prev-page');
   const nextButton = document.getElementById('formulations-next-page');
   const pageLabel = document.getElementById('formulations-page-label');
-  const pageSize = 10;
+  const paginationContainer = document.getElementById('formulations-pagination');
+  let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
 
@@ -1036,6 +1117,8 @@ function attachFormulationsFilterForm() {
     lastTotal = Number(data.data.total || 0);
     renderFormulationsTable(output, items);
     updatePagerControls({ prevButton, nextButton, label: pageLabel, page, total: lastTotal, pageSize });
+    const table = output.querySelector('table');
+    decorateReusableTable(table, 0);
   }
 
   // Re-run query from page one whenever filter criteria change via explicit search submit.
@@ -1064,6 +1147,12 @@ function attachFormulationsFilterForm() {
       loadFormulations(page + 1).catch((error) => alert(error.message));
     });
   }
+
+  // Add shared page-size control for consistent pagination UX.
+  ensurePageSizeSelector(paginationContainer, pageSize, (nextSize) => {
+    pageSize = nextSize;
+    loadFormulations(1).catch((error) => alert(error.message));
+  });
 
   // Load all formulations (newest-to-oldest from API) on page open with default page size.
   loadFormulations(1).catch((error) => {
@@ -1103,8 +1192,9 @@ function attachLocationCodePage() {
   const prevButton = document.getElementById('location-codes-prev-page');
   const nextButton = document.getElementById('location-codes-next-page');
   const pageLabel = document.getElementById('location-codes-page-label');
+  const paginationContainer = document.getElementById('location-codes-pagination');
   const filterForm = document.getElementById('location-codes-filter-form');
-  const pageSize = 10;
+  let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
 
@@ -1200,6 +1290,8 @@ function attachLocationCodePage() {
     }
 
     updatePagerControls({ prevButton, nextButton, label: pageLabel, page, total: lastTotal, pageSize });
+    const table = tableBody.closest('table');
+    decorateReusableTable(table, 0);
   }
 
   // Update generated YYMMDD preview whenever the production date picker changes.
@@ -1497,6 +1589,7 @@ function attachCompoundingHowPage() {
 
     table.appendChild(tbody);
     output.appendChild(table);
+    decorateReusableTable(table, 0);
   }
 
   locationSelect.addEventListener('change', updatePreview);
@@ -1734,6 +1827,7 @@ function attachPelletBagsPage() {
     });
     table.appendChild(tbody);
     output.appendChild(table);
+    decorateReusableTable(table, 0);
   }
 
   form.addEventListener('submit', async (event) => {
@@ -1769,6 +1863,11 @@ function attachPelletBagsPage() {
 
   loadMeta().then(loadItems).catch((error) => alert(error.message));
 }
+
+// Apply reusable sticky/scroll behavior to server-rendered tables that exist on initial page load.
+Array.from(document.querySelectorAll('table')).forEach((table) => {
+  decorateReusableTable(table, 0);
+});
 
 attachIngredientForm();
 attachIngredientImportForm();

@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from google.api_core.exceptions import NotFound
 
+from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, LocationCodeCreate, LocationPartnerCreate
 from app.services.bigquery_service import BigQueryService
@@ -100,7 +101,7 @@ def list_location_formulations(bigquery: BigQueryService = Depends(get_bigquery)
 @router.get("", response_model=ApiResponse)
 def list_location_codes(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     q: str | None = Query(default=None),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_actor, get_bigquery, get_settings
 from app.models import ApiResponse, IngredientSetCreate
 from app.services.bigquery_service import BigQueryService
@@ -41,7 +42,7 @@ def create_set(
 def list_sets(
     q: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     # Return paged set data so the table scales cleanly to 100+ rows.

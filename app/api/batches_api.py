@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
+from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_actor, get_bigquery, get_settings, get_storage
 from app.models import ApiResponse, IngredientBatchCreate, UploadConfirm, UploadRequest
 from app.services.bigquery_service import BigQueryService
@@ -69,7 +70,7 @@ def list_batches(
     sku: str | None = None,
     batch_code: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     # Support all-batch listing with optional SKU and batch-code filters for scalable lookup workflows.
