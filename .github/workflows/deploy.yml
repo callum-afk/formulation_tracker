@@ -26,7 +26,8 @@ jobs:
       - name: Build and push
         run: |
           gcloud auth configure-docker ${{ secrets.ARTIFACT_REGISTRY_HOST }}
-          docker build -t ${{ secrets.ARTIFACT_REGISTRY_IMAGE }}:$GITHUB_SHA .
+          APP_BUILD_VERSION="$(git log -1 --pretty=format:%h\ %s)"
+          docker build --build-arg APP_BUILD_VERSION="$APP_BUILD_VERSION" -t ${{ secrets.ARTIFACT_REGISTRY_IMAGE }}:$GITHUB_SHA .
           docker push ${{ secrets.ARTIFACT_REGISTRY_IMAGE }}:$GITHUB_SHA
 
       - name: Deploy

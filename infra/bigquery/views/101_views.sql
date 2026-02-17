@@ -45,7 +45,33 @@ SELECT
   b.batch_variant_code,
   CONCAT(b.set_code, ' ', b.weight_code, ' ', b.batch_variant_code) AS base_code,
   b.created_at,
-  ARRAY_LENGTH(b.items) AS sku_count,
-  ARRAY(SELECT x.sku FROM UNNEST(b.items) x ORDER BY x.sku) AS sku_list,
-  b.items AS batch_items
-FROM `PROJECT_ID.DATASET_ID.v_batch_variants` b;
+  b.sku_list,
+  ARRAY_LENGTH(b.sku_list) AS sku_count,
+  b.batch_items,
+  ARRAY(
+    SELECT AS STRUCT
+      sku AS sku,
+      (
+        SELECT wi.wt_percent
+        FROM UNNEST(w.items) wi
+        WHERE wi.sku = sku
+        LIMIT 1
+      ) AS wt_percent
+    FROM UNNEST(b.sku_list) AS sku
+  ) AS dry_weight_items
+FROM (
+  SELECT
+    v.set_code,
+    v.weight_code,
+    v.batch_variant_code,
+    v.created_at,
+    ARRAY(SELECT x.sku FROM UNNEST(v.items) x ORDER BY x.sku) AS sku_list,
+    ARRAY(
+      SELECT AS STRUCT x.sku AS sku, x.ingredient_batch_code AS ingredient_batch_code
+      FROM UNNEST(v.items) x
+      ORDER BY x.sku
+    ) AS batch_items
+  FROM `PROJECT_ID.DATASET_ID.v_batch_variants` v
+) b
+LEFT JOIN `PROJECT_ID.DATASET_ID.v_weight_variants` w
+ON w.set_code = b.set_code AND w.weight_code = b.weight_code;

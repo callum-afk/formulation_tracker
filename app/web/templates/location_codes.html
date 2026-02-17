@@ -25,25 +25,21 @@
 </section>
 
 <section class="panel">
-  <!-- Paginated list of created location codes keeps recent records visible for traceability. -->
+  <!-- Paginated list includes server-side contains filtering on full location code text. -->
   <h2>Location codes</h2>
+  <form id="location-codes-filter-form" class="inline-actions">
+    <label>Filter location code <input name="q" id="location-codes-filter-input" placeholder="e.g. AB AC, 250112" /></label>
+    <button type="submit">Filter</button>
+  </form>
   <div id="location-codes-results">
     <table>
       <thead>
         <tr>
           <th>Location code</th>
-          <th>Set code</th>
-          <th>Weight code</th>
-          <th>Batch variant code</th>
-          <th>Compounding partner</th>
-          <th>Date of production</th>
-          <th>YYMMDD code</th>
-          <th>Created</th>
-          <th>Owner</th>
         </tr>
       </thead>
       <tbody id="location-codes-table-body">
-        <tr><td colspan="9">No location codes loaded.</td></tr>
+        <tr><td>No location codes loaded.</td></tr>
       </tbody>
     </table>
   </div>

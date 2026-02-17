@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from google.cloud import bigquery
@@ -20,8 +21,23 @@ class BigQueryService:
         return f"{self.project_id}.{self.dataset_id}"
 
     def _run(self, query: str, params: Sequence[bigquery.ScalarQueryParameter]) -> bigquery.job.QueryJob:
+        # Force US location to avoid cross-region errors when this dataset is provisioned in US.
         job_config = bigquery.QueryJobConfig(query_parameters=list(params))
+        job_config.location = "US"
         return self.client.query(query, job_config=job_config)
+
+    def run_startup_sql(self) -> None:
+        # Execute DDL migrations and view definitions in lexical order so deploys self-heal missing schema objects.
+        sql_roots = [Path("infra/bigquery/ddl"), Path("infra/bigquery/views")]
+        for root in sql_roots:
+            if not root.exists():
+                continue
+            for sql_file in sorted(root.glob("*.sql")):
+                sql = sql_file.read_text(encoding="utf-8")
+                rendered = sql.replace("PROJECT_ID", self.project_id).replace("DATASET_ID", self.dataset_id)
+                # Split on statement terminators so multi-statement migration files can run sequentially.
+                for statement in (part.strip() for part in rendered.split(";") if part.strip()):
+                    self._run(statement, []).result()
 
     def allocate_counter(self, counter_name: str, scope: str, start_value: int) -> int:
         for _ in range(10):
@@ -687,26 +703,115 @@ class BigQueryService:
             ],
         ).result()
 
-    def list_location_codes_paginated(self, page: int, page_size: int) -> Tuple[List[Dict[str, Any]], int]:
+    def list_location_codes_paginated(
+        self,
+        page: int,
+        page_size: int,
+        q: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
         # Return paginated location code rows ordered newest-first for predictable table navigation.
-        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.location_codes`"
-        total_rows = list(self._run(count_query, []).result())
+        where_clause = ""
+        params: List[bigquery.ScalarQueryParameter] = []
+        if q:
+            # Apply substring filtering over the full location code text, matching the UI search behavior.
+            where_clause = "WHERE CONTAINS_SUBSTR(location_id, @query)"
+            params.append(bigquery.ScalarQueryParameter("query", "STRING", q))
+
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.location_codes` {where_clause}"
+        total_rows = list(self._run(count_query, params).result())
         total = int(total_rows[0]["total"]) if total_rows else 0
 
         # Include deterministic tie-breakers to keep pagination stable for equal timestamps.
         query = (
             f"SELECT location_id, set_code, weight_code, batch_variant_code, partner_code, production_date, created_at, created_by "
             f"FROM `{self.dataset}.location_codes` "
+            f"{where_clause} "
             "ORDER BY created_at DESC, location_id DESC "
             "LIMIT @limit OFFSET @offset"
         )
         offset = max(page - 1, 0) * page_size
-        params = [
+        data_params = [
+            *params,
             bigquery.ScalarQueryParameter("limit", "INT64", page_size),
             bigquery.ScalarQueryParameter("offset", "INT64", offset),
         ]
-        rows = self._run(query, params).result()
+        rows = self._run(query, data_params).result()
         return [dict(row) for row in rows], total
+
+    def list_location_code_ids(self) -> List[str]:
+        # Return active location IDs for dropdown options used when generating processing codes.
+        query = f"SELECT DISTINCT location_id FROM `{self.dataset}.location_codes` ORDER BY location_id"
+        rows = self._run(query, []).result()
+        return [row["location_id"] for row in rows]
+
+    def create_compounding_how(
+        self,
+        processing_code: str,
+        location_code: str,
+        process_code_suffix: str,
+        failure_mode: str,
+        machine_setup_url: Optional[str],
+        processed_data_url: Optional[str],
+        created_by: Optional[str],
+    ) -> None:
+        # Insert immutable core metadata with mutable link fields for later edits.
+        query = (
+            f"INSERT `{self.dataset}.compounding_how` "
+            "(processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, "
+            "processed_data_url, created_at, updated_at, created_by, updated_by, is_active) "
+            "VALUES (@processing_code, @location_code, @process_code_suffix, @failure_mode, @machine_setup_url, "
+            "@processed_data_url, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @created_by, @updated_by, TRUE)"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code),
+                bigquery.ScalarQueryParameter("location_code", "STRING", location_code),
+                bigquery.ScalarQueryParameter("process_code_suffix", "STRING", process_code_suffix),
+                bigquery.ScalarQueryParameter("failure_mode", "STRING", failure_mode),
+                bigquery.ScalarQueryParameter("machine_setup_url", "STRING", machine_setup_url),
+                bigquery.ScalarQueryParameter("processed_data_url", "STRING", processed_data_url),
+                bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", created_by),
+            ],
+        ).result()
+
+    def list_compounding_how(self) -> List[Dict[str, Any]]:
+        # List active compounding records for the table below the form.
+        query = (
+            f"SELECT processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, "
+            "processed_data_url, created_at, updated_at, created_by, updated_by "
+            f"FROM `{self.dataset}.compounding_how` WHERE is_active = TRUE "
+            "ORDER BY created_at DESC, processing_code DESC"
+        )
+        rows = self._run(query, []).result()
+        return [dict(row) for row in rows]
+
+    def update_compounding_how(
+        self,
+        processing_code: str,
+        failure_mode: str,
+        machine_setup_url: Optional[str],
+        processed_data_url: Optional[str],
+        updated_by: Optional[str],
+    ) -> None:
+        # Restrict updates to editable fields only, preserving immutable identifiers and timestamps.
+        query = (
+            f"UPDATE `{self.dataset}.compounding_how` "
+            "SET failure_mode = @failure_mode, machine_setup_url = @machine_setup_url, "
+            "processed_data_url = @processed_data_url, updated_at = CURRENT_TIMESTAMP(), updated_by = @updated_by "
+            "WHERE processing_code = @processing_code AND is_active = TRUE"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("failure_mode", "STRING", failure_mode),
+                bigquery.ScalarQueryParameter("machine_setup_url", "STRING", machine_setup_url),
+                bigquery.ScalarQueryParameter("processed_data_url", "STRING", processed_data_url),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
+                bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code),
+            ],
+        ).result()
 
     def insert_location_code(
         self,

@@ -9,11 +9,10 @@
 <body>
   <!-- Sticky header shell styled with Notpla-inspired tokens and pill navigation. -->
   <header class="site-header">
-    <!-- Inner header container keeps title, version, and nav aligned to page width. -->
+    <!-- Inner header container keeps title and nav aligned to page width. -->
     <div class="header-inner">
       <div class="header-top">
         <h1 class="site-title"><img class="site-logo" src="https://imagedelivery.net/WWB_1xpr0hQZ8HyAj4j9Mg/92e7e1f1-0166-44df-cfa5-5e92ca2dad00/thumb" alt="Notpla logo" /> <span>Formulation Tracker</span></h1>
-        <span class="app-version">Version {{ request.app.state.settings.app_version }}</span>
       </div>
       <nav class="site-nav">
         <!-- Primary application navigation keeps core workflows grouped on the left. -->
@@ -25,6 +24,7 @@
           <a href="/batch_selection">Batch Selection</a>
           <a href="/formulations/ui">Formulations</a>
           <a href="/location_codes">Location Codes</a>
+          <a href="/compounding_how">Compounding - How</a>
         </div>
         <!-- Utilities shortcut is intentionally pinned to the right as requested. -->
         <div class="site-nav-right">
@@ -37,6 +37,12 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  <!-- Footer keeps deploy-updated git metadata visible and out of the header flow. -->
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <span class="app-version">{{ request.app.state.settings.app_version }}</span>
+    </div>
+  </footer>
   <script src="/static/app.js"></script>
 </body>
 </html>
