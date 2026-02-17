@@ -4,6 +4,7 @@ from typing import Dict
 
 from fastapi import APIRouter, Depends, Query
 
+from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_bigquery
 from app.models import ApiResponse
 from app.services.bigquery_service import BigQueryService
@@ -18,7 +19,7 @@ def list_formulations(
     batch_variant_code: str | None = None,
     sku: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=10, ge=1, le=100),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     # Build optional filters from query params so users can browse all or narrow by one/more fields.
