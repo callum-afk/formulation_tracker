@@ -142,7 +142,8 @@ def import_ingredient(
             detail="SKU sequence must match existing product",
         )
     if not product:
-        existing_seq = bigquery.find_ingredient_by_seq(seq)
+        # Block conflicts only when the same category already uses this sequence index.
+        existing_seq = bigquery.find_ingredient_by_category_and_seq(category_code, seq)
         if existing_seq:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -172,6 +173,9 @@ def import_ingredient(
             "msds_uploaded_at": None,
         }
     )
+    # Raise the generated-SKU counter floor so future creates don't reuse imported sequence values.
+    bigquery.set_counter_at_least("ingredient_seq", "global", seq + 1)
+
     ingredient = bigquery.get_ingredient(payload.sku)
     return ApiResponse(ok=True, data={"sku": payload.sku, "ingredient": ingredient})
 

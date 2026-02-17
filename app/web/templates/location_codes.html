@@ -4,9 +4,17 @@
   <h2>Create location ID</h2>
   <form id="location-code-form" class="form-stack">
     <div class="grid">
-      <label>Set code <input name="set_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
-      <label>Weight code <input name="weight_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
-      <label>Batch variant code <input name="batch_variant_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
+      <label>Formulation (dropdown)
+        <select id="location-formulation-select">
+          <option value="">Select formulation</option>
+        </select>
+      </label>
+      <label>Formulation code (manual)
+        <input id="location-formulation-manual" placeholder="AB AB AC" />
+      </label>
+      <label>Set code <input name="set_code" id="location-set-code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
+      <label>Weight code <input name="weight_code" id="location-weight-code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
+      <label>Batch variant code <input name="batch_variant_code" id="location-batch-code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
       <label>Compounding partner
         <select name="partner_code" id="location-partner-select" required>
           <option value="">Select partner</option>
@@ -36,10 +44,13 @@
       <thead>
         <tr>
           <th>Location code</th>
+          <th>Owner</th>
+          <th>Compounding partner</th>
+          <th>Date created</th>
         </tr>
       </thead>
       <tbody id="location-codes-table-body">
-        <tr><td>No location codes loaded.</td></tr>
+        <tr><td colspan="4">No location codes loaded.</td></tr>
       </tbody>
     </table>
   </div>
