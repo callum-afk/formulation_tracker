@@ -42,3 +42,4 @@ Optional:
 - `AUTH_MODE=none` allows unauthenticated access and uses an `unknown` actor for audit fields.
 - For Cloud Run deployment, ensure `AUTH_MODE=cloudrun` plus required vars: `PROJECT_ID`, `DATASET_ID=formulation_app_eu`, `REGION=europe-west2`, `BQ_LOCATION=europe-west2`, `BUCKET_MSDS`, `BUCKET_SPECS`, and `CLOUD_RUN_SERVICE_NAME`.
 - BigQuery counters are implemented with an optimistic concurrency update loop to avoid collisions for low-concurrency internal usage.
+- Pellet bag management is available at `/pellet_bags` with bulk code minting, editable optional metadata, and product-type sequence namespaces backed by `pellet_bags` + `pellet_bag_assignees` BigQuery tables.
