@@ -1557,6 +1557,219 @@ function attachBatchDetailFormulations() {
     });
 }
 
+function appendSelectOptions(select, options) {
+  // Fill select options with a blank first option to keep all optional fields nullable.
+  clearElement(select);
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = 'Select';
+  select.appendChild(blank);
+  options.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+}
+
+function attachPelletBagsPage() {
+  const form = document.getElementById('pellet-bag-create-form');
+  if (!form) return;
+
+  const status = document.getElementById('pellet-create-status');
+  const createdCodesContainer = document.getElementById('pellet-created-codes');
+  const output = document.getElementById('pellet-bags-results');
+
+  const productType = document.getElementById('pellet-product-type');
+  const purpose = document.getElementById('pellet-purpose');
+  const referenceSample = document.getElementById('pellet-reference-sample');
+  const qcStatus = document.getElementById('pellet-qc-status');
+  const longStatus = document.getElementById('pellet-long-status');
+  const densityStatus = document.getElementById('pellet-density-status');
+  const injectionStatus = document.getElementById('pellet-injection-status');
+  const filmStatus = document.getElementById('pellet-film-status');
+  const injectionAssignee = document.getElementById('pellet-injection-assignee');
+  const filmAssignee = document.getElementById('pellet-film-assignee');
+
+  function numericOrNull(value) {
+    // Convert numeric inputs to Number and keep empty values as null for API compatibility.
+    if (value === null || value === undefined || value === '') return null;
+    return Number(value);
+  }
+
+  function renderCreatedCodes(items) {
+    // Show newly minted codes with one-click copy buttons immediately after creation.
+    clearElement(createdCodesContainer);
+    if (!items || items.length === 0) return;
+    const list = document.createElement('ul');
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      const text = document.createElement('span');
+      text.textContent = item.pellet_bag_code || '';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Copy';
+      button.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(item.pellet_bag_code || '');
+      });
+      li.append(text, document.createTextNode(' '), button);
+      list.appendChild(li);
+    });
+    createdCodesContainer.appendChild(list);
+  }
+
+  async function loadMeta() {
+    // Load dropdown metadata including dynamic assignee email options.
+    const meta = await fetchJson('/api/pellet_bags/meta');
+    appendSelectOptions(productType, meta.product_types || []);
+    appendSelectOptions(purpose, meta.purpose_options || []);
+    appendSelectOptions(referenceSample, meta.reference_sample_options || []);
+    appendSelectOptions(qcStatus, meta.qc_status_options || []);
+    appendSelectOptions(longStatus, meta.status_options || []);
+    appendSelectOptions(densityStatus, meta.status_options || []);
+    appendSelectOptions(injectionStatus, meta.injection_film_status_options || []);
+    appendSelectOptions(filmStatus, meta.injection_film_status_options || []);
+    appendSelectOptions(injectionAssignee, meta.assignee_emails || []);
+    appendSelectOptions(filmAssignee, meta.assignee_emails || []);
+  }
+
+  function editableCell(row, value, name, type = 'text') {
+    // Build per-row edit controls for optional fields using plain text rendering and input value binding.
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = type;
+    input.value = value ?? '';
+    input.name = name;
+    input.disabled = true;
+    td.appendChild(input);
+    row._editable = row._editable || [];
+    row._editable.push(input);
+    return td;
+  }
+
+  async function loadItems() {
+    // Render the created bag table and enable in-row editing for optional fields only.
+    const data = await fetchJson('/api/pellet_bags');
+    const items = data.items || [];
+    clearElement(output);
+    const table = document.createElement('table');
+    const headers = [
+      'Pellet bag code','Compounding how code','Product type','Bag mass kg','Remaining mass kg','Short moisture percent','Purpose','Reference sample taken','QC status','Long moisture status','Density status','Injection moulding status','Injection moulding assignee','Film forming status','Film forming assignee','Customer','Notes','Created at','Created by','Actions'
+    ];
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    headers.forEach((header) => {
+      const th = document.createElement('th');
+      th.textContent = header;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    items.forEach((item) => {
+      const row = document.createElement('tr');
+      const readonlyValues = [
+        item.pellet_bag_code,
+        item.compounding_how_code,
+        item.product_type,
+        item.bag_mass_kg,
+      ];
+      readonlyValues.forEach((value) => {
+        const td = document.createElement('td');
+        td.textContent = value ?? '';
+        row.appendChild(td);
+      });
+
+      row.appendChild(editableCell(row, item.remaining_mass_kg, 'remaining_mass_kg', 'number'));
+      row.appendChild(editableCell(row, item.short_moisture_percent, 'short_moisture_percent', 'number'));
+      row.appendChild(editableCell(row, item.purpose, 'purpose'));
+      row.appendChild(editableCell(row, item.reference_sample_taken, 'reference_sample_taken'));
+      row.appendChild(editableCell(row, item.qc_status, 'qc_status'));
+      row.appendChild(editableCell(row, item.long_moisture_status, 'long_moisture_status'));
+      row.appendChild(editableCell(row, item.density_status, 'density_status'));
+      row.appendChild(editableCell(row, item.injection_moulding_status, 'injection_moulding_status'));
+      row.appendChild(editableCell(row, item.injection_moulding_assignee_email, 'injection_moulding_assignee_email'));
+      row.appendChild(editableCell(row, item.film_forming_status, 'film_forming_status'));
+      row.appendChild(editableCell(row, item.film_forming_assignee_email, 'film_forming_assignee_email'));
+      row.appendChild(editableCell(row, item.customer, 'customer'));
+      row.appendChild(editableCell(row, item.notes, 'notes'));
+
+      const createdAt = document.createElement('td');
+      createdAt.textContent = item.created_at || '';
+      const createdBy = document.createElement('td');
+      createdBy.textContent = item.created_by || '';
+      row.append(createdAt, createdBy);
+
+      const actionTd = document.createElement('td');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Edit';
+      button.addEventListener('click', async () => {
+        if (button.dataset.mode !== 'editing') {
+          button.dataset.mode = 'editing';
+          button.textContent = 'Save';
+          (row._editable || []).forEach((input) => { input.disabled = false; });
+          return;
+        }
+
+        const payload = {};
+        (row._editable || []).forEach((input) => {
+          payload[input.name] = input.type === 'number' ? numericOrNull(input.value) : (input.value || null);
+        });
+
+        await fetchJson(`/api/pellet_bags/${encodeURIComponent(item.pellet_bag_id || '')}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        button.dataset.mode = '';
+        button.textContent = 'Edit';
+        (row._editable || []).forEach((input) => { input.disabled = true; });
+      });
+      actionTd.appendChild(button);
+      row.appendChild(actionTd);
+
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    output.appendChild(table);
+  }
+
+  form.addEventListener('submit', async (event) => {
+    // Submit create payload, supporting bulk minting and optional creation fields.
+    event.preventDefault();
+    const formData = new FormData(form);
+    const payload = {
+      compounding_how_code: (formData.get('compounding_how_code') || '').toString().trim(),
+      product_type: (formData.get('product_type') || '').toString().trim(),
+      bag_mass_kg: Number(formData.get('bag_mass_kg')),
+      number_of_bags: Number(formData.get('number_of_bags') || 1),
+      short_moisture_percent: numericOrNull(formData.get('short_moisture_percent')),
+      purpose: (formData.get('purpose') || '').toString().trim() || null,
+      reference_sample_taken: (formData.get('reference_sample_taken') || '').toString().trim() || null,
+      qc_status: (formData.get('qc_status') || '').toString().trim() || null,
+      long_moisture_status: (formData.get('long_moisture_status') || '').toString().trim() || null,
+      density_status: (formData.get('density_status') || '').toString().trim() || null,
+      injection_moulding_status: (formData.get('injection_moulding_status') || '').toString().trim() || null,
+      film_forming_status: (formData.get('film_forming_status') || '').toString().trim() || null,
+      injection_moulding_assignee_email: (formData.get('injection_moulding_assignee_email') || '').toString().trim() || null,
+      film_forming_assignee_email: (formData.get('film_forming_assignee_email') || '').toString().trim() || null,
+      remaining_mass_kg: numericOrNull(formData.get('remaining_mass_kg')),
+      notes: (formData.get('notes') || '').toString(),
+      customer: (formData.get('customer') || '').toString(),
+    };
+
+    status.textContent = 'Creating...';
+    const created = await postJson('/api/pellet_bags', payload);
+    status.textContent = `Created ${created.items?.length || 0} bag(s).`;
+    renderCreatedCodes(created.items || []);
+    await loadItems();
+  });
+
+  loadMeta().then(loadItems).catch((error) => alert(error.message));
+}
+
 attachIngredientForm();
 attachIngredientImportForm();
 attachIngredientMsdsForm();
@@ -1571,4 +1784,5 @@ attachFormulationsFilterForm();
 attachLocationCodePage();
 attachLocationPartnerUtilityForm();
 attachCompoundingHowPage();
+attachPelletBagsPage();
 attachBatchDetailFormulations();

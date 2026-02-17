@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Creation form supports single and bulk pellet bag code minting in one submit action. -->
+  <h2>Create pellet bags</h2>
+  <form id="pellet-bag-create-form" class="form-stack">
+    <div class="grid">
+      <label>Compounding how code
+        <input name="compounding_how_code" required />
+      </label>
+      <label>Product type
+        <select name="product_type" id="pellet-product-type" required>
+          <option value="">Select product type</option>
+        </select>
+      </label>
+      <label>Bag mass kg
+        <input name="bag_mass_kg" type="number" min="0" step="any" required />
+      </label>
+      <label>Number of bags
+        <input name="number_of_bags" type="number" min="1" max="500" value="1" required />
+      </label>
+    </div>
+
+    <!-- Optional creation fields are collapsed by default and can be expanded when needed. -->
+    <details>
+      <summary>Optional fields</summary>
+      <div class="grid">
+        <label>Short moisture percent
+          <input name="short_moisture_percent" type="number" step="any" />
+        </label>
+        <label>Purpose
+          <select name="purpose" id="pellet-purpose"></select>
+        </label>
+        <label>Reference sample taken
+          <select name="reference_sample_taken" id="pellet-reference-sample"></select>
+        </label>
+        <label>QC status
+          <select name="qc_status" id="pellet-qc-status"></select>
+        </label>
+        <label>Long moisture status
+          <select name="long_moisture_status" id="pellet-long-status"></select>
+        </label>
+        <label>Density status
+          <select name="density_status" id="pellet-density-status"></select>
+        </label>
+        <label>Injection moulding status
+          <select name="injection_moulding_status" id="pellet-injection-status"></select>
+        </label>
+        <label>Injection moulding assignee email
+          <select name="injection_moulding_assignee_email" id="pellet-injection-assignee"></select>
+        </label>
+        <label>Film forming status
+          <select name="film_forming_status" id="pellet-film-status"></select>
+        </label>
+        <label>Film forming assignee email
+          <select name="film_forming_assignee_email" id="pellet-film-assignee"></select>
+        </label>
+        <label>Remaining mass kg
+          <input name="remaining_mass_kg" type="number" min="0" step="any" />
+        </label>
+        <label>Customer
+          <input name="customer" />
+        </label>
+        <label>Notes
+          <textarea name="notes"></textarea>
+        </label>
+      </div>
+    </details>
+
+    <button type="submit">Create pellet bags</button>
+  </form>
+  <p id="pellet-create-status"></p>
+  <div id="pellet-created-codes"></div>
+</section>
+
+<section class="panel">
+  <!-- Table shows all created pellet bag metadata and can open inline editing for optional fields. -->
+  <h2>Created bags table</h2>
+  <div id="pellet-bags-results"></div>
+</section>
+{% endblock %}

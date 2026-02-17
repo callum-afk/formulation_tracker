@@ -135,6 +135,15 @@ async def compounding_how(request: Request) -> HTMLResponse:
         {"request": request, "title": "Compounding - How"},
     )
 
+@router.get("/pellet_bags", response_class=HTMLResponse)
+async def pellet_bags(request: Request) -> HTMLResponse:
+    # Serve pellet bag code minting and management workflow page.
+    return templates.TemplateResponse(
+        "pellet_bags.html",
+        {"request": request, "title": "Pellet Bags"},
+    )
+
+
 @router.get("/ingredients/{sku}/edit", response_class=HTMLResponse)
 async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     ingredient = bigquery.get_ingredient(sku)

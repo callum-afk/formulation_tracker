@@ -151,3 +151,61 @@ class CompoundingHowUpdate(BaseModel):
     machine_setup_url: Optional[str] = None
     # Optional processed data URL can be added or updated after initial save.
     processed_data_url: Optional[str] = None
+
+
+class PelletBagCreate(BaseModel):
+    # Persist the existing compounding how code text exactly as entered tokens.
+    compounding_how_code: str
+    # Product type controls the namespace and suffix token (PR/PF/PI).
+    product_type: str
+    # Bag mass is immutable after creation and supports decimal values.
+    bag_mass_kg: float = Field(ge=0)
+    # Allow minting one or many sequential pellet bag codes in one request.
+    number_of_bags: int = Field(default=1, ge=1, le=500)
+    # Optional data captured during creation and editable after creation.
+    short_moisture_percent: Optional[float] = None
+    purpose: Optional[str] = None
+    reference_sample_taken: Optional[str] = None
+    qc_status: Optional[str] = None
+    long_moisture_status: Optional[str] = None
+    density_status: Optional[str] = None
+    injection_moulding_status: Optional[str] = None
+    film_forming_status: Optional[str] = None
+    injection_moulding_assignee_email: Optional[str] = None
+    film_forming_assignee_email: Optional[str] = None
+    remaining_mass_kg: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = None
+    customer: Optional[str] = None
+
+    @validator("compounding_how_code", pre=True)
+    def validate_compounding_how_code(cls, value: str) -> str:
+        # Normalize spacing while keeping token text unchanged for deterministic code construction.
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("compounding_how_code is required")
+        return normalized
+
+    @validator("product_type", pre=True)
+    def validate_product_type(cls, value: str) -> str:
+        # Restrict product type to approved code suffixes.
+        normalized = (value or "").strip().upper()
+        if normalized not in {"PR", "PF", "PI"}:
+            raise ValueError("product_type must be one of PR, PF, PI")
+        return normalized
+
+
+class PelletBagUpdate(BaseModel):
+    # Editable optional and operational fields for post-creation updates.
+    short_moisture_percent: Optional[float] = None
+    purpose: Optional[str] = None
+    reference_sample_taken: Optional[str] = None
+    qc_status: Optional[str] = None
+    long_moisture_status: Optional[str] = None
+    density_status: Optional[str] = None
+    injection_moulding_status: Optional[str] = None
+    film_forming_status: Optional[str] = None
+    injection_moulding_assignee_email: Optional[str] = None
+    film_forming_assignee_email: Optional[str] = None
+    remaining_mass_kg: Optional[float] = Field(default=None, ge=0)
+    notes: Optional[str] = None
+    customer: Optional[str] = None

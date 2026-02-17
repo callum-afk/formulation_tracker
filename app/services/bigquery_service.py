@@ -6,6 +6,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from uuid import uuid4
 
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
@@ -107,6 +108,8 @@ class BigQueryService:
             "location_codes": {"set_code", "weight_code", "batch_variant_code", "partner_code", "production_date", "location_id", "created_at", "created_by"},
             "compounding_how": {"processing_code", "location_code", "process_code_suffix", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "code_counters": {"counter_name", "scope", "next_value", "updated_at"},
+            "pellet_bags": {"pellet_bag_id", "pellet_bag_code", "pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "bag_mass_kg", "remaining_mass_kg", "short_moisture_percent", "purpose", "reference_sample_taken", "qc_status", "long_moisture_status", "density_status", "injection_moulding_status", "film_forming_status", "injection_moulding_assignee_email", "film_forming_assignee_email", "notes", "customer", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
+            "pellet_bag_assignees": {"email", "is_active", "created_at", "created_by"},
         }
 
         # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
@@ -1010,6 +1013,194 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code),
             ],
         ).result()
+
+    def allocate_counter_range(self, counter_name: str, scope: str, start_value: int, count: int) -> int:
+        # Allocate an atomic contiguous range of counter values and return the starting value.
+        if count < 1:
+            raise ValueError("count must be >= 1")
+        for _ in range(20):
+            current_value = self.allocate_counter(counter_name=counter_name, scope=scope, start_value=start_value)
+            if count == 1:
+                return current_value
+            update_query = (
+                f"UPDATE `{self.dataset}.code_counters` "
+                "SET next_value = @next_value, updated_at = CURRENT_TIMESTAMP() "
+                "WHERE counter_name = @counter_name AND scope = @scope AND next_value = @expected_next_value"
+            )
+            update_job = self._run(
+                update_query,
+                [
+                    bigquery.ScalarQueryParameter("next_value", "INT64", current_value + count),
+                    bigquery.ScalarQueryParameter("counter_name", "STRING", counter_name),
+                    bigquery.ScalarQueryParameter("scope", "STRING", scope),
+                    bigquery.ScalarQueryParameter("expected_next_value", "INT64", current_value + 1),
+                ],
+            )
+            update_job.result()
+            if update_job.num_dml_affected_rows == 1:
+                return current_value
+        raise RuntimeError("Failed to allocate counter range after retries")
+
+    def list_pellet_bag_assignees(self, default_emails: Optional[List[str]] = None) -> List[str]:
+        # Return active assignee emails from table, seeding defaults once when table is empty.
+        query = f"SELECT email FROM `{self.dataset}.pellet_bag_assignees` WHERE is_active = TRUE ORDER BY email"
+        rows = [dict(row) for row in self._run(query, []).result()]
+        if rows:
+            return [row["email"] for row in rows]
+        seed_values = default_emails or []
+        if seed_values:
+            for email in seed_values:
+                self._run(
+                    f"INSERT `{self.dataset}.pellet_bag_assignees` (email, is_active, created_at, created_by) "
+                    "VALUES (@email, TRUE, CURRENT_TIMESTAMP(), @created_by)",
+                    [
+                        bigquery.ScalarQueryParameter("email", "STRING", email),
+                        bigquery.ScalarQueryParameter("created_by", "STRING", "system"),
+                    ],
+                ).result()
+        return sorted(seed_values)
+
+    def create_pellet_bags(
+        self,
+        compounding_how_code: str,
+        product_type: str,
+        bag_mass_kg: float,
+        number_of_bags: int,
+        optional_fields: Dict[str, Any],
+        created_by: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        # Mint one contiguous sequence range and insert all records with deterministic code token formatting.
+        scope = f"pellet_bag:{product_type}"
+        start_sequence = self.allocate_counter_range("pellet_bag_sequence", scope, start_value=0, count=number_of_bags)
+        compounding_tokens = compounding_how_code.split()
+        created_items: List[Dict[str, Any]] = []
+
+        for offset in range(number_of_bags):
+            sequence_number = start_sequence + offset
+            sequence_token = f"{sequence_number:04d}"
+            pellet_tokens = [*compounding_tokens, product_type, sequence_token]
+            pellet_bag_code = " ".join(pellet_tokens)
+            pellet_bag_id = str(uuid4())
+            remaining_mass = optional_fields.get("remaining_mass_kg")
+            if remaining_mass is None:
+                remaining_mass = bag_mass_kg
+
+            self._run(
+                f"INSERT `{self.dataset}.pellet_bags` "
+                "(pellet_bag_id, pellet_bag_code, pellet_bag_code_tokens, compounding_how_code, product_type, sequence_number, "
+                "bag_mass_kg, remaining_mass_kg, short_moisture_percent, purpose, reference_sample_taken, qc_status, "
+                "long_moisture_status, density_status, injection_moulding_status, film_forming_status, "
+                "injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, "
+                "created_at, updated_at, created_by, updated_by, is_active) "
+                "VALUES (@pellet_bag_id, @pellet_bag_code, @pellet_bag_code_tokens, @compounding_how_code, @product_type, @sequence_number, "
+                "@bag_mass_kg, @remaining_mass_kg, @short_moisture_percent, @purpose, @reference_sample_taken, @qc_status, "
+                "@long_moisture_status, @density_status, @injection_moulding_status, @film_forming_status, "
+                "@injection_moulding_assignee_email, @film_forming_assignee_email, @notes, @customer, "
+                "CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @created_by, @updated_by, TRUE)",
+                [
+                    bigquery.ScalarQueryParameter("pellet_bag_id", "STRING", pellet_bag_id),
+                    bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_bag_code),
+                    bigquery.ArrayQueryParameter("pellet_bag_code_tokens", "STRING", pellet_tokens),
+                    bigquery.ScalarQueryParameter("compounding_how_code", "STRING", compounding_how_code),
+                    bigquery.ScalarQueryParameter("product_type", "STRING", product_type),
+                    bigquery.ScalarQueryParameter("sequence_number", "INT64", sequence_number),
+                    bigquery.ScalarQueryParameter("bag_mass_kg", "FLOAT64", bag_mass_kg),
+                    bigquery.ScalarQueryParameter("remaining_mass_kg", "FLOAT64", remaining_mass),
+                    bigquery.ScalarQueryParameter("short_moisture_percent", "FLOAT64", optional_fields.get("short_moisture_percent")),
+                    bigquery.ScalarQueryParameter("purpose", "STRING", optional_fields.get("purpose")),
+                    bigquery.ScalarQueryParameter("reference_sample_taken", "STRING", optional_fields.get("reference_sample_taken")),
+                    bigquery.ScalarQueryParameter("qc_status", "STRING", optional_fields.get("qc_status")),
+                    bigquery.ScalarQueryParameter("long_moisture_status", "STRING", optional_fields.get("long_moisture_status")),
+                    bigquery.ScalarQueryParameter("density_status", "STRING", optional_fields.get("density_status")),
+                    bigquery.ScalarQueryParameter("injection_moulding_status", "STRING", optional_fields.get("injection_moulding_status")),
+                    bigquery.ScalarQueryParameter("film_forming_status", "STRING", optional_fields.get("film_forming_status")),
+                    bigquery.ScalarQueryParameter("injection_moulding_assignee_email", "STRING", optional_fields.get("injection_moulding_assignee_email")),
+                    bigquery.ScalarQueryParameter("film_forming_assignee_email", "STRING", optional_fields.get("film_forming_assignee_email")),
+                    bigquery.ScalarQueryParameter("notes", "STRING", optional_fields.get("notes")),
+                    bigquery.ScalarQueryParameter("customer", "STRING", optional_fields.get("customer")),
+                    bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
+                    bigquery.ScalarQueryParameter("updated_by", "STRING", created_by),
+                ],
+            ).result()
+
+            created_items.append({
+                "pellet_bag_id": pellet_bag_id,
+                "pellet_bag_code": pellet_bag_code,
+                "pellet_bag_code_tokens": pellet_tokens,
+                "compounding_how_code": compounding_how_code,
+                "product_type": product_type,
+                "sequence_number": sequence_number,
+                "bag_mass_kg": bag_mass_kg,
+                "remaining_mass_kg": remaining_mass,
+                "short_moisture_percent": optional_fields.get("short_moisture_percent"),
+                "purpose": optional_fields.get("purpose"),
+                "reference_sample_taken": optional_fields.get("reference_sample_taken"),
+                "qc_status": optional_fields.get("qc_status"),
+                "long_moisture_status": optional_fields.get("long_moisture_status"),
+                "density_status": optional_fields.get("density_status"),
+                "injection_moulding_status": optional_fields.get("injection_moulding_status"),
+                "film_forming_status": optional_fields.get("film_forming_status"),
+                "injection_moulding_assignee_email": optional_fields.get("injection_moulding_assignee_email"),
+                "film_forming_assignee_email": optional_fields.get("film_forming_assignee_email"),
+                "notes": optional_fields.get("notes"),
+                "customer": optional_fields.get("customer"),
+                "created_by": created_by,
+            })
+        return created_items
+
+    def list_pellet_bags(self) -> List[Dict[str, Any]]:
+        # Return active pellet bag records newest-first for the management table.
+        query = (
+            f"SELECT pellet_bag_id, pellet_bag_code, pellet_bag_code_tokens, compounding_how_code, product_type, sequence_number, "
+            "bag_mass_kg, remaining_mass_kg, short_moisture_percent, purpose, reference_sample_taken, qc_status, "
+            "long_moisture_status, density_status, injection_moulding_status, film_forming_status, "
+            "injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, created_at, updated_at, created_by, updated_by "
+            f"FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE ORDER BY created_at DESC, sequence_number DESC"
+        )
+        return [dict(row) for row in self._run(query, []).result()]
+
+    def update_pellet_bag(self, pellet_bag_id: str, updated_by: Optional[str], optional_fields: Dict[str, Any]) -> bool:
+        # Update only editable optional fields while preserving immutable identifiers and creation metadata.
+        query = (
+            f"UPDATE `{self.dataset}.pellet_bags` SET "
+            "remaining_mass_kg = COALESCE(@remaining_mass_kg, remaining_mass_kg), "
+            "short_moisture_percent = COALESCE(@short_moisture_percent, short_moisture_percent), "
+            "purpose = COALESCE(@purpose, purpose), "
+            "reference_sample_taken = COALESCE(@reference_sample_taken, reference_sample_taken), "
+            "qc_status = COALESCE(@qc_status, qc_status), "
+            "long_moisture_status = COALESCE(@long_moisture_status, long_moisture_status), "
+            "density_status = COALESCE(@density_status, density_status), "
+            "injection_moulding_status = COALESCE(@injection_moulding_status, injection_moulding_status), "
+            "film_forming_status = COALESCE(@film_forming_status, film_forming_status), "
+            "injection_moulding_assignee_email = COALESCE(@injection_moulding_assignee_email, injection_moulding_assignee_email), "
+            "film_forming_assignee_email = COALESCE(@film_forming_assignee_email, film_forming_assignee_email), "
+            "notes = COALESCE(@notes, notes), "
+            "customer = COALESCE(@customer, customer), "
+            "updated_at = CURRENT_TIMESTAMP(), updated_by = @updated_by "
+            "WHERE pellet_bag_id = @pellet_bag_id AND is_active = TRUE"
+        )
+        job = self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("remaining_mass_kg", "FLOAT64", optional_fields.get("remaining_mass_kg")),
+                bigquery.ScalarQueryParameter("short_moisture_percent", "FLOAT64", optional_fields.get("short_moisture_percent")),
+                bigquery.ScalarQueryParameter("purpose", "STRING", optional_fields.get("purpose")),
+                bigquery.ScalarQueryParameter("reference_sample_taken", "STRING", optional_fields.get("reference_sample_taken")),
+                bigquery.ScalarQueryParameter("qc_status", "STRING", optional_fields.get("qc_status")),
+                bigquery.ScalarQueryParameter("long_moisture_status", "STRING", optional_fields.get("long_moisture_status")),
+                bigquery.ScalarQueryParameter("density_status", "STRING", optional_fields.get("density_status")),
+                bigquery.ScalarQueryParameter("injection_moulding_status", "STRING", optional_fields.get("injection_moulding_status")),
+                bigquery.ScalarQueryParameter("film_forming_status", "STRING", optional_fields.get("film_forming_status")),
+                bigquery.ScalarQueryParameter("injection_moulding_assignee_email", "STRING", optional_fields.get("injection_moulding_assignee_email")),
+                bigquery.ScalarQueryParameter("film_forming_assignee_email", "STRING", optional_fields.get("film_forming_assignee_email")),
+                bigquery.ScalarQueryParameter("notes", "STRING", optional_fields.get("notes")),
+                bigquery.ScalarQueryParameter("customer", "STRING", optional_fields.get("customer")),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
+                bigquery.ScalarQueryParameter("pellet_bag_id", "STRING", pellet_bag_id),
+            ],
+        )
+        job.result()
+        return bool(job.num_dml_affected_rows)
 
     def insert_location_code(
         self,
