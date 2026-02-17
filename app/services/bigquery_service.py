@@ -23,8 +23,7 @@ class BigQueryService:
     def _run(self, query: str, params: Sequence[bigquery.ScalarQueryParameter]) -> bigquery.job.QueryJob:
         # Force US location to avoid cross-region errors when this dataset is provisioned in US.
         job_config = bigquery.QueryJobConfig(query_parameters=list(params))
-        job_config.location = "US"
-        return self.client.query(query, job_config=job_config)
+                return self.client.query(query, job_config=job_config, location=os.getenv("BQ_LOCATION", os.getenv("REGION", "europe-west2")))
 
     def run_startup_sql(self) -> None:
         # Execute DDL migrations and view definitions in lexical order so deploys self-heal missing schema objects.
