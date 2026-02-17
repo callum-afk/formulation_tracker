@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 import subprocess
 
 
@@ -22,12 +23,22 @@ class Settings:
 
 
 def _resolve_app_version() -> str:
+    # Prefer explicit env override for emergency rollbacks or local testing overrides.
     env_version = os.getenv("APP_VERSION")
     if env_version:
         return env_version
+
+    # Read build-generated version metadata file so deployed containers always show current git info.
+    version_file = Path("app/version.txt")
+    if version_file.exists():
+        version_text = version_file.read_text(encoding="utf-8").strip()
+        if version_text:
+            return version_text
+
+    # Fallback to local git command for dev runs when version.txt was not generated at build time.
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            ["git", "log", "-1", "--pretty=format:%h %s"],
             check=True,
             capture_output=True,
             text=True,

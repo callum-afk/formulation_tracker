@@ -125,6 +125,16 @@ async def location_codes(request: Request) -> HTMLResponse:
     )
 
 
+
+
+@router.get("/compounding_how", response_class=HTMLResponse)
+async def compounding_how(request: Request) -> HTMLResponse:
+    # Serve compounding-how creation and edit workflow page.
+    return templates.TemplateResponse(
+        "compounding_how.html",
+        {"request": request, "title": "Compounding - How"},
+    )
+
 @router.get("/ingredients/{sku}/edit", response_class=HTMLResponse)
 async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     ingredient = bigquery.get_ingredient(sku)

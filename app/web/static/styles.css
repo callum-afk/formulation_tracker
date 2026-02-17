@@ -112,7 +112,7 @@ a:hover {
 /* Top line balances title and app version metadata in a responsive arrangement. */
 .header-top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
@@ -135,7 +135,7 @@ a:hover {
 
 /* Brand logo scales to title line-height and remains crisp on high-density displays. */
 .site-logo {
-  height: 1.2em;
+  height: 1.55em;
   width: auto;
   object-fit: contain;
   display: inline-block;
@@ -469,4 +469,18 @@ table tbody tr:hover td {
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.85rem;
+}
+
+
+/* Footer anchors deploy version metadata to the bottom of each page. */
+.site-footer {
+  width: min(var(--max-page-width), calc(100% - 2 * var(--space-4)));
+  margin: var(--space-3) auto var(--space-5);
+}
+
+/* Footer inner wraps subtle git metadata without competing with main content. */
+.site-footer-inner {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+  color: var(--color-ink-500);
 }

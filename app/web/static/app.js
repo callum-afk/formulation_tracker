@@ -18,9 +18,9 @@ async function postJson(url, payload) {
   return data.data;
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, init = undefined) {
   // Load JSON payloads while handling plain-text backend errors without JSON parse crashes.
-  const response = await fetch(url);
+  const response = await fetch(url, init);
   const rawBody = await response.text();
   let data;
   try {
@@ -906,7 +906,7 @@ function renderFormulationsTable(output, items) {
 
   items.forEach((item) => {
     const skuList = Array.isArray(item.sku_list) ? item.sku_list : parseList(item.sku_list || '');
-    const weightMap = mapItemsBySku(item.weight_items, 'wt_percent');
+    const weightMap = mapItemsBySku(item.dry_weight_items, 'wt_percent');
     const batchMap = mapItemsBySku(item.batch_items, 'ingredient_batch_code');
     const displaySkus = skuList.length ? skuList : ['—'];
     const lineCount = displaySkus.length;
@@ -1065,6 +1065,7 @@ function attachLocationCodePage() {
   const prevButton = document.getElementById('location-codes-prev-page');
   const nextButton = document.getElementById('location-codes-next-page');
   const pageLabel = document.getElementById('location-codes-page-label');
+  const filterForm = document.getElementById('location-codes-filter-form');
   const pageSize = 10;
   let page = 1;
   let lastTotal = 0;
@@ -1091,9 +1092,16 @@ function attachLocationCodePage() {
     });
   }
 
-  // Render paginated location code table rows with inline copy controls.
+  // Render paginated location code table rows with inline copy controls and optional server-side filtering.
   async function loadLocationCodes(targetPage) {
-    const data = await fetchJson(`/api/location_codes?page=${encodeURIComponent(targetPage)}&page_size=${encodeURIComponent(pageSize)}`);
+    const params = new URLSearchParams();
+    params.set('page', String(targetPage));
+    params.set('page_size', String(pageSize));
+    if (filterForm) {
+      const query = ((new FormData(filterForm).get('q') || '').toString().trim());
+      if (query) params.set('q', query);
+    }
+    const data = await fetchJson(`/api/location_codes?${params.toString()}`);
     const items = data.items || [];
     page = Number(data.page || targetPage);
     lastTotal = Number(data.total || 0);
@@ -1102,7 +1110,7 @@ function attachLocationCodePage() {
     if (!items.length) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 9;
+      cell.colSpan = 1;
       cell.textContent = 'No location codes found.';
       row.appendChild(cell);
       tableBody.appendChild(row);
@@ -1111,23 +1119,7 @@ function attachLocationCodePage() {
         const row = document.createElement('tr');
         const locationCell = document.createElement('td');
         locationCell.appendChild(createCopyTextBlock(item.location_id || '', 'location-copy'));
-        const setCell = document.createElement('td');
-        setCell.textContent = item.set_code || '';
-        const weightCell = document.createElement('td');
-        weightCell.textContent = item.weight_code || '';
-        const batchCell = document.createElement('td');
-        batchCell.textContent = item.batch_variant_code || '';
-        const partnerCell = document.createElement('td');
-        partnerCell.textContent = item.partner_code || '';
-        const dateCell = document.createElement('td');
-        dateCell.textContent = formatYyMmDdToDateLabel(item.production_date || '');
-        const yymmddCell = document.createElement('td');
-        yymmddCell.textContent = item.production_date || '';
-        const createdCell = document.createElement('td');
-        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
-        const ownerCell = document.createElement('td');
-        ownerCell.textContent = item.created_by || 'Unknown';
-        row.append(locationCell, setCell, weightCell, batchCell, partnerCell, dateCell, yymmddCell, createdCell, ownerCell);
+        row.append(locationCell);
         tableBody.appendChild(row);
       });
     }
@@ -1140,6 +1132,7 @@ function attachLocationCodePage() {
     dateCodeInput.value = formatDateToYyMmDd(dateInput.value);
   });
 
+  // Submit location ID creation payload and refresh the listing from the first page.
   locationForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(locationForm);
@@ -1170,6 +1163,14 @@ function attachLocationCodePage() {
       alert(error.message);
     }
   });
+
+  // Trigger filter-based search while resetting pagination to the first page.
+  if (filterForm) {
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loadLocationCodes(1).catch((error) => alert(error.message));
+    });
+  }
 
   if (prevButton) {
     prevButton.addEventListener('click', () => {
@@ -1229,6 +1230,194 @@ function attachLocationPartnerUtilityForm() {
   loadPartnerTable().catch((error) => alert(error.message));
 }
 
+function attachCompoundingHowPage() {
+  // Wire form generation, table rendering, and inline edit interactions for compounding-how records.
+  const form = document.getElementById('compounding-how-form');
+  if (!form) return;
+  const locationSelect = document.getElementById('compounding-location-code');
+  const suffixInput = document.getElementById('compounding-process-suffix');
+  const previewInput = document.getElementById('compounding-processing-preview');
+  const allocateButton = document.getElementById('compounding-allocate');
+  const failureModeSelect = document.getElementById('compounding-failure-mode');
+  const output = document.getElementById('compounding-how-results');
+
+  // Keep processing code preview synchronized with selected location code and generated suffix.
+  function updatePreview() {
+    const locationCode = (locationSelect.value || '').trim();
+    const suffix = (suffixInput.value || '').trim();
+    previewInput.value = locationCode && suffix ? `${locationCode} ${suffix}` : '';
+  }
+
+  // Populate dropdown metadata and prime a generated process suffix for first submit.
+  async function loadMeta() {
+    const data = await fetchJson('/api/compounding_how/meta');
+    clearElement(locationSelect);
+    const firstLocation = document.createElement('option');
+    firstLocation.value = '';
+    firstLocation.textContent = 'Select location code';
+    locationSelect.appendChild(firstLocation);
+    (data.location_codes || []).forEach((locationCode) => {
+      const option = document.createElement('option');
+      option.value = locationCode;
+      option.textContent = locationCode;
+      locationSelect.appendChild(option);
+    });
+
+    clearElement(failureModeSelect);
+    const firstMode = document.createElement('option');
+    firstMode.value = '';
+    firstMode.textContent = 'Select failure mode';
+    failureModeSelect.appendChild(firstMode);
+    (data.failure_modes || []).forEach((mode) => {
+      const option = document.createElement('option');
+      option.value = mode;
+      option.textContent = mode;
+      failureModeSelect.appendChild(option);
+    });
+
+    const allocated = await postJson('/api/compounding_how/allocate', {});
+    suffixInput.value = allocated.process_code_suffix || '';
+    updatePreview();
+  }
+
+  // Render compounding-how records and expose inline edit controls for permitted mutable fields.
+  async function loadItems() {
+    const data = await fetchJson('/api/compounding_how');
+    const items = data.items || [];
+    clearElement(output);
+
+    if (!items.length) {
+      const p = document.createElement('p');
+      p.textContent = 'No compounding how entries found.';
+      output.appendChild(p);
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.innerHTML = '<thead><tr><th>Processing Code</th><th>Date created</th><th>Owner</th><th>Failure Mode</th><th>Machine Setup File</th><th>Processed Data File</th><th>Actions</th></tr></thead>';
+    const tbody = document.createElement('tbody');
+
+    items.forEach((item) => {
+      const row = document.createElement('tr');
+      const processingCodeCell = document.createElement('td');
+      processingCodeCell.appendChild(createCopyTextBlock(item.processing_code || '', 'processing-copy'));
+
+      const createdCell = document.createElement('td');
+      createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+
+      const ownerCell = document.createElement('td');
+      ownerCell.textContent = item.created_by || 'Unknown';
+
+      const failureCell = document.createElement('td');
+      const failureInput = document.createElement('select');
+      ([''].concat(Array.from(new Set(Array.from(failureModeSelect.options).map((option) => option.value).filter(Boolean))))).forEach((mode) => {
+        const option = document.createElement('option');
+        option.value = mode;
+        option.textContent = mode || 'Select failure mode';
+        failureInput.appendChild(option);
+      });
+      failureInput.value = item.failure_mode || '';
+      failureInput.disabled = true;
+      failureCell.appendChild(failureInput);
+
+      const machineCell = document.createElement('td');
+      const machineInput = document.createElement('input');
+      machineInput.type = 'url';
+      machineInput.value = item.machine_setup_url || '';
+      machineInput.disabled = true;
+      machineCell.appendChild(machineInput);
+
+      const processedCell = document.createElement('td');
+      const processedInput = document.createElement('input');
+      processedInput.type = 'url';
+      processedInput.value = item.processed_data_url || '';
+      processedInput.disabled = true;
+      processedCell.appendChild(processedInput);
+
+      const actionCell = document.createElement('td');
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.textContent = 'Edit';
+      actionCell.appendChild(editButton);
+
+      // Toggle into edit mode and persist allowed fields with API update call.
+      editButton.addEventListener('click', async () => {
+        if (editButton.dataset.mode !== 'editing') {
+          editButton.dataset.mode = 'editing';
+          editButton.textContent = 'Save';
+          failureInput.disabled = false;
+          machineInput.disabled = false;
+          processedInput.disabled = false;
+          return;
+        }
+
+        try {
+          await fetchJson(`/api/compounding_how/${encodeURIComponent(item.processing_code || '')}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              failure_mode: failureInput.value,
+              machine_setup_url: machineInput.value,
+              processed_data_url: processedInput.value,
+            }),
+          });
+          editButton.dataset.mode = '';
+          editButton.textContent = 'Edit';
+          failureInput.disabled = true;
+          machineInput.disabled = true;
+          processedInput.disabled = true;
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+
+      row.append(processingCodeCell, createdCell, ownerCell, failureCell, machineCell, processedCell, actionCell);
+      tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    output.appendChild(table);
+  }
+
+  locationSelect.addEventListener('change', updatePreview);
+
+  // Allocate a fresh AB-style suffix and update preview so users can regenerate before save.
+  allocateButton.addEventListener('click', async () => {
+    try {
+      const allocated = await postJson('/api/compounding_how/allocate', {});
+      suffixInput.value = allocated.process_code_suffix || '';
+      updatePreview();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  // Submit compounding-how record and then refresh table while allocating next suffix for convenience.
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    try {
+      await postJson('/api/compounding_how', {
+        location_code: (formData.get('location_code') || '').toString().trim(),
+        process_code_suffix: (formData.get('process_code_suffix') || '').toString().trim(),
+        failure_mode: (formData.get('failure_mode') || '').toString().trim(),
+        machine_setup_url: (formData.get('machine_setup_url') || '').toString().trim(),
+        processed_data_url: (formData.get('processed_data_url') || '').toString().trim(),
+      });
+      const allocated = await postJson('/api/compounding_how/allocate', {});
+      suffixInput.value = allocated.process_code_suffix || '';
+      updatePreview();
+      form.reset();
+      updatePreview();
+      await loadItems();
+    } catch (error) {
+      alert(error.message);
+    }
+  });
+
+  loadMeta().then(loadItems).catch((error) => alert(error.message));
+}
+
 // Render formulations on the batch detail page by loading them from the batch detail API endpoint.
 function attachBatchDetailFormulations() {
   const container = document.getElementById('batch-detail-formulations');
@@ -1261,4 +1450,5 @@ attachBatchVariantLookupForm();
 attachFormulationsFilterForm();
 attachLocationCodePage();
 attachLocationPartnerUtilityForm();
+attachCompoundingHowPage();
 attachBatchDetailFormulations();

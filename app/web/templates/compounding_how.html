@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Compounding how form creates a processing code by appending a generated AB-style suffix. -->
+  <h2>Compounding - How</h2>
+  <form id="compounding-how-form" class="form-stack">
+    <div class="grid">
+      <label>Location code
+        <select name="location_code" id="compounding-location-code" required>
+          <option value="">Select location code</option>
+        </select>
+      </label>
+      <label>Compounding process code
+        <div class="inline-actions">
+          <input name="process_code_suffix" id="compounding-process-suffix" maxlength="2" pattern="[A-Za-z]{2}" readonly required />
+          <button type="button" id="compounding-allocate">Generate code</button>
+        </div>
+      </label>
+      <label>Processing code
+        <input name="processing_code_preview" id="compounding-processing-preview" readonly />
+      </label>
+      <label>Failure mode
+        <select name="failure_mode" id="compounding-failure-mode" required>
+          <option value="">Select failure mode</option>
+        </select>
+      </label>
+      <label>Google sheet link: Machine Setup File
+        <input name="machine_setup_url" type="url" placeholder="https://..." />
+      </label>
+      <label>Google sheet link: Processed Data File
+        <input name="processed_data_url" type="url" placeholder="https://..." />
+      </label>
+    </div>
+    <button type="submit">Save compounding how</button>
+  </form>
+</section>
+
+<section class="panel">
+  <!-- Table keeps immutable metadata visible while enabling edits for links and failure mode only. -->
+  <h2>Compounding how entries</h2>
+  <div id="compounding-how-results"></div>
+</section>
+{% endblock %}

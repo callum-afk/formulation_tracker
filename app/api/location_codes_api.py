@@ -94,10 +94,11 @@ def create_location_partner(
 def list_location_codes(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
+    q: str | None = Query(default=None),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
-    # Return paginated location IDs for UI table rendering without changing creation APIs.
-    rows, total = bigquery.list_location_codes_paginated(page=page, page_size=page_size)
+    # Return paginated location IDs with optional substring filtering on the full location code string.
+    rows, total = bigquery.list_location_codes_paginated(page=page, page_size=page_size, q=(q or "").strip() or None)
     return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
 
 @router.post("", response_model=ApiResponse)

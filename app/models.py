@@ -129,3 +129,25 @@ class LocationCodeCreate(BaseModel):
         if len(normalized) != 6 or not normalized.isdigit():
             raise ValueError("production_date must be exactly 6 digits in YYMMDD format")
         return normalized
+
+
+class CompoundingHowCreate(BaseModel):
+    # Existing location code selected by the user as the immutable base for processing code generation.
+    location_code: str
+    # Two-letter process suffix generated from the code counter and appended to the location code.
+    process_code_suffix: str
+    # Failure mode must be one of the predefined options configured in the API layer.
+    failure_mode: str
+    # Optional machine setup sheet URL for operator notes and setup traceability.
+    machine_setup_url: Optional[str] = None
+    # Optional processed data sheet URL for post-run analysis linkage.
+    processed_data_url: Optional[str] = None
+
+
+class CompoundingHowUpdate(BaseModel):
+    # Failure mode remains editable after creation so records can be corrected later.
+    failure_mode: str
+    # Optional machine setup URL can be added or updated after initial save.
+    machine_setup_url: Optional[str] = None
+    # Optional processed data URL can be added or updated after initial save.
+    processed_data_url: Optional[str] = None

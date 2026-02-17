@@ -13,6 +13,7 @@ from app.api.weights_api import router as weights_router
 from app.api.batch_variants_api import router as batch_variants_router
 from app.api.formulations_api import router as formulations_router
 from app.api.location_codes_api import router as location_codes_router
+from app.api.compounding_how_api import router as compounding_how_router
 from app.web.routes import router as web_router
 
 app = FastAPI(title="Formulation Tracker")
@@ -22,6 +23,8 @@ app = FastAPI(title="Formulation Tracker")
 def startup() -> None:
     settings = init_settings()
     bigquery, storage = init_services(settings)
+    # Run startup DDL and views so new tables/views exist after each deploy in Cloud Run.
+    bigquery.run_startup_sql()
     app.state.settings = settings
     app.state.bigquery = bigquery
     app.state.storage = storage
@@ -56,6 +59,7 @@ app.include_router(weights_router)
 app.include_router(batch_variants_router)
 app.include_router(formulations_router)
 app.include_router(location_codes_router)
+app.include_router(compounding_how_router)
 app.include_router(web_router)
 
 app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
