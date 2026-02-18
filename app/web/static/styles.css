@@ -264,7 +264,6 @@ body {
   top: 0;
   z-index: 5;
   margin-top: var(--space-2);
-  margin-bottom: var(--space-5);
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -275,7 +274,6 @@ body {
 /* Content title is promoted to sentence case heading style to match the provided target screenshot. */
 .content-title {
   margin: 0;
-  font-size: clamp(1.85rem, 1.25rem + 1.15vw, 2.4rem);
   font-family: var(--font-heading);
   font-weight: 500;
   letter-spacing: -0.02em;
