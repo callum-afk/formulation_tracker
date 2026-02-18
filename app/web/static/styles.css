@@ -62,20 +62,24 @@ body {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   min-height: 100vh;
-  background: #0f1230;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-paper-100);
 }
 
-/* Sidebar panel uses dark surfaces and nested groups inspired by the provided reference. */
+/* Sidebar panel is styled as a light card that matches the existing Notpla panels. */
 .sidebar-nav {
   position: sticky;
   top: 0;
   align-self: start;
-  height: 100vh;
+  height: calc(100vh - (2 * var(--space-4)));
   overflow-y: auto;
   padding: var(--space-4);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, #0b0e27 0%, #111538 100%);
-  color: #f2f4ff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--color-card) 0%, var(--color-paper-100) 100%);
+  box-shadow: var(--shadow-panel);
+  color: var(--color-ink-900);
   display: grid;
   grid-template-rows: auto 1fr auto;
   gap: var(--space-3);
@@ -85,46 +89,63 @@ body {
 .sidebar-brand {
   display: grid;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-1);
   padding: var(--space-3);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, white 55%, var(--color-paper-100));
+  border: 1px solid var(--color-border);
 }
 
-/* Collapsible nav groups mimic common admin sidebar behavior from the reference image. */
+/* Sidebar groups stack with the same spacing rhythm used by form controls. */
+.sidebar-groups {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+}
+
+/* Collapsible nav groups keep card-like borders and restrained contrast on the light canvas. */
 .nav-group {
-  margin-bottom: var(--space-2);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 0;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: rgba(32, 36, 77, 0.72);
+  background: color-mix(in srgb, white 62%, var(--color-paper-100));
   overflow: hidden;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
-/* Group headers are styled as bold white labels and include a custom chevron indicator. */
+/* Group headers match existing table-header typography for consistent hierarchy. */
 .nav-group > summary {
   cursor: pointer;
   list-style: none;
   padding: var(--space-3);
-  font-family: var(--font-heading);
-  font-size: 0.95rem;
-  color: #f6f7ff;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--color-ink-500);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-/* Chevron marker communicates collapsed/expanded state without relying on browser defaults. */
-.nav-group > summary::after {
-  content: "▾";
-  font-size: 0.85rem;
-  color: #cfd5ff;
-  transition: transform 0.2s ease;
+/* Group header hover mirrors input hover language with subtle moss-tinted contrast. */
+.nav-group > summary:hover {
+  background: color-mix(in srgb, var(--color-moss-300) 25%, white);
+  color: var(--color-ink-700);
 }
 
-/* Rotate the chevron when the details panel is collapsed for clear affordance. */
-.nav-group:not([open]) > summary::after {
-  transform: rotate(-90deg);
+/* Expanded group subtly highlights the parent row when one of its children is active. */
+.nav-group.is-parent-active {
+  border-color: color-mix(in srgb, var(--color-moss-500) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-moss-300) 20%, white);
+}
+
+/* Expanded parent row receives a subtle tone shift so grouping state is obvious but not loud. */
+.nav-group.is-parent-active > summary {
+  background: color-mix(in srgb, var(--color-moss-300) 28%, white);
+  color: var(--color-ink-700);
 }
 
 /* Hide default disclosure marker so we can keep the visual style clean and consistent. */
@@ -132,65 +153,97 @@ body {
   display: none;
 }
 
+/* Chevron icon rotates to indicate open/closed state for each accordion group. */
+.nav-group-chevron {
+  font-size: 0.95rem;
+  color: var(--color-ink-500);
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+
+/* Open groups rotate chevron downward so state is visible at a glance. */
+.nav-group[open] .nav-group-chevron {
+  transform: rotate(0deg);
+}
+
+/* Collapsible content animates smoothly by transitioning a single grid row height. */
+.nav-group-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.2s ease;
+}
+
+/* Closed groups collapse content row to zero while keeping DOM nodes for accessibility. */
+.nav-group:not([open]) .nav-group-content {
+  grid-template-rows: 0fr;
+}
+
 /* Item stack provides predictable spacing for nav links and placeholder labels. */
 .nav-group-items {
   display: grid;
   gap: var(--space-1);
+  min-height: 0;
+  overflow: hidden;
   padding: 0 var(--space-2) var(--space-3);
 }
 
-/* Sidebar links are full-width rows with subtle hover transitions and high contrast text. */
+/* Sidebar links are full-width rows with light card borders and calm interaction states. */
 .nav-group-items a,
 .nav-placeholder {
   display: block;
   min-height: 2rem;
   padding: var(--space-2) var(--space-3);
-  border-radius: 10px;
-  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
   text-decoration: none;
-  font-size: 0.9rem;
-  color: #e6e9ff;
-  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.92rem;
+  color: var(--color-ink-700);
+  background: color-mix(in srgb, white 72%, var(--color-paper-100));
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
 }
 
 /* Placeholder rows are intentionally muted because those pages are not yet available. */
 .nav-placeholder {
-  color: #9ea6d8;
+  color: var(--color-ink-500);
   border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: color-mix(in srgb, var(--color-border) 82%, white);
 }
 
-/* Sidebar link hover keeps interaction feedback aligned with the dark sidebar style. */
+/* Sidebar link hover matches existing input-hover border behaviour and subtle paper tinting. */
 .nav-group-items a:hover {
-  background: rgba(118, 132, 255, 0.2);
-  border-color: rgba(163, 176, 255, 0.45);
+  background: color-mix(in srgb, var(--color-moss-300) 28%, white);
+  border-color: color-mix(in srgb, var(--color-moss-500) 40%, var(--color-border));
+  color: var(--color-ink-900);
 }
 
-/* Sidebar profile card anchors the bottom of the nav and echoes the reference footer strip. */
+/* Active child route gets the clearest treatment with stronger contrast and a left indicator. */
+.nav-group-items a.is-active {
+  border-color: color-mix(in srgb, var(--color-ink-900) 24%, var(--color-border));
+  background: color-mix(in srgb, var(--color-moss-300) 38%, white);
+  color: var(--color-ink-900);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--color-ink-900);
+}
+
+/* Sidebar profile card anchors the bottom and follows card border/shadow language. */
 .sidebar-user-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+  justify-content: flex-start;
+  gap: var(--space-2);
   padding: var(--space-3);
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(80, 91, 175, 0.32);
-  color: #f7f8ff;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, white 65%, var(--color-paper-100));
+  color: var(--color-ink-900);
 }
 
 /* Profile card text stack keeps actor and role labels neatly grouped. */
 .sidebar-user-card small {
   display: block;
-  color: #c8cff8;
+  color: var(--color-ink-500);
   font-size: 0.78rem;
   margin-top: 2px;
-}
-
-/* Simple icon treatment gives the footer card a compact actionable visual marker. */
-.sidebar-user-icon {
-  font-size: 1.05rem;
-  color: #dbe0ff;
 }
 
 /* Content column hosts a sticky title header and the page's existing panel content. */
@@ -199,12 +252,18 @@ body {
   background: var(--color-paper-100);
 }
 
+/* Content inner keeps global max width centered while sidebar remains outside width clamp. */
+.content-inner {
+  width: min(var(--max-page-width), 100%);
+  margin: 0 auto;
+}
+
 /* Header row anchors current page title while harmonizing with the main content background. */
 .content-header {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: var(--space-4);
+  padding: var(--space-4) 0;
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--color-paper-100) 88%, white);
   backdrop-filter: blur(4px);
@@ -213,9 +272,11 @@ body {
 /* Content title mirrors panel heading typography but remains compact in the sticky bar. */
 .content-title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 0.76rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  color: var(--color-ink-500);
 }
 
 /* Main heading hierarchy uses the brand-forward heading typeface and tighter tracking. */
@@ -293,7 +354,7 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
-  color: #f7f8ff;
+  color: var(--color-ink-900);
 }
 
 /* Brand logo scales to title line-height and remains crisp on high-density displays. */
@@ -352,7 +413,7 @@ a:hover {
 main {
   width: 100%;
   margin: 0;
-  padding: var(--space-6) var(--space-4);
+  padding: var(--space-6) 0;
 }
 
 /* Panels become card surfaces with rounded corners, quiet borders, and controlled elevation. */
@@ -612,14 +673,18 @@ table tbody tr:hover td {
   /* Collapse app shell to one column and allow sidebar to scroll with the page on phones. */
   .app-shell {
     grid-template-columns: 1fr;
+    padding: var(--space-3);
   }
 
   /* Sidebar becomes non-sticky on narrow screens to avoid clipping content height. */
   .sidebar-nav {
     position: static;
     height: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* Content sticky header remains aligned with single-column layout on mobile widths. */
+  .content-header {
+    padding: var(--space-3) 0;
   }
 }
 
