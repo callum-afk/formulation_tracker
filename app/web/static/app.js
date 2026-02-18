@@ -137,6 +137,7 @@ function updatePagerControls({ prevButton, nextButton, label, page, total, pageS
     nextButton.disabled = page >= totalPages;
   }
   return totalPages;
+}
 
 
 // Wrap a table with the reusable scroll shell and apply sticky first-column behavior.
@@ -189,7 +190,6 @@ function ensurePageSizeSelector(container, currentSize, onChange) {
     });
   }
   select.value = String(currentSize);
-}
 }
 
 function attachIngredientForm() {
