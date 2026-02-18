@@ -62,9 +62,10 @@ body {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   min-height: 100vh;
+  background: #0f1230;
 }
 
-/* Sidebar panel replaces the previous top navigation with collapsible grouped items. */
+/* Sidebar panel uses dark surfaces and nested groups inspired by the provided reference. */
 .sidebar-nav {
   position: sticky;
   top: 0;
@@ -72,34 +73,58 @@ body {
   height: 100vh;
   overflow-y: auto;
   padding: var(--space-4);
-  border-right: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-paper-100) 90%, white);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, #0b0e27 0%, #111538 100%);
+  color: #f2f4ff;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--space-3);
 }
 
 /* Sidebar brand block keeps logo and version metadata together above navigation groups. */
 .sidebar-brand {
   display: grid;
   gap: var(--space-2);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Collapsible nav groups mimic simple sidebar components without extra JS dependencies. */
+/* Collapsible nav groups mimic common admin sidebar behavior from the reference image. */
 .nav-group {
   margin-bottom: var(--space-2);
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-card) 72%, white);
+  background: rgba(32, 36, 77, 0.72);
   overflow: hidden;
 }
 
-/* Group headers are styled like compact section labels and support click-to-collapse. */
+/* Group headers are styled as bold white labels and include a custom chevron indicator. */
 .nav-group > summary {
   cursor: pointer;
   list-style: none;
   padding: var(--space-3);
   font-family: var(--font-heading);
   font-size: 0.95rem;
-  letter-spacing: 0.02em;
+  color: #f6f7ff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Chevron marker communicates collapsed/expanded state without relying on browser defaults. */
+.nav-group > summary::after {
+  content: "▾";
+  font-size: 0.85rem;
+  color: #cfd5ff;
+  transition: transform 0.2s ease;
+}
+
+/* Rotate the chevron when the details panel is collapsed for clear affordance. */
+.nav-group:not([open]) > summary::after {
+  transform: rotate(-90deg);
 }
 
 /* Hide default disclosure marker so we can keep the visual style clean and consistent. */
@@ -110,41 +135,71 @@ body {
 /* Item stack provides predictable spacing for nav links and placeholder labels. */
 .nav-group-items {
   display: grid;
-  gap: var(--space-2);
-  padding: 0 var(--space-3) var(--space-3);
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-3);
 }
 
-/* Sidebar links use compact rounded pills with left alignment for scan-friendly nav. */
+/* Sidebar links are full-width rows with subtle hover transitions and high contrast text. */
 .nav-group-items a,
 .nav-placeholder {
   display: block;
   min-height: 2rem;
   padding: var(--space-2) var(--space-3);
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  border: 1px solid transparent;
   text-decoration: none;
   font-size: 0.9rem;
-  background: color-mix(in srgb, var(--color-paper-100) 74%, white);
+  color: #e6e9ff;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 /* Placeholder rows are intentionally muted because those pages are not yet available. */
 .nav-placeholder {
-  color: var(--color-ink-500);
+  color: #9ea6d8;
   border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
-/* Sidebar link hover keeps interaction feedback consistent with the existing design language. */
+/* Sidebar link hover keeps interaction feedback aligned with the dark sidebar style. */
 .nav-group-items a:hover {
-  background: var(--color-moss-300);
-  border-color: color-mix(in srgb, var(--color-moss-500) 55%, var(--color-border));
+  background: rgba(118, 132, 255, 0.2);
+  border-color: rgba(163, 176, 255, 0.45);
+}
+
+/* Sidebar profile card anchors the bottom of the nav and echoes the reference footer strip. */
+.sidebar-user-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(80, 91, 175, 0.32);
+  color: #f7f8ff;
+}
+
+/* Profile card text stack keeps actor and role labels neatly grouped. */
+.sidebar-user-card small {
+  display: block;
+  color: #c8cff8;
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+/* Simple icon treatment gives the footer card a compact actionable visual marker. */
+.sidebar-user-icon {
+  font-size: 1.05rem;
+  color: #dbe0ff;
 }
 
 /* Content column hosts a sticky title header and the page's existing panel content. */
 .content-shell {
   min-width: 0;
+  background: var(--color-paper-100);
 }
 
-/* Header row anchors current page title without reintroducing the old global nav. */
+/* Header row anchors current page title while harmonizing with the main content background. */
 .content-header {
   position: sticky;
   top: 0;
@@ -238,6 +293,7 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+  color: #f7f8ff;
 }
 
 /* Brand logo scales to title line-height and remains crisp on high-density displays. */
@@ -290,50 +346,6 @@ a:hover {
 .app-version {
   color: var(--color-ink-500);
   font-size: 0.9rem;
-}
-
-/* Navigation row wraps naturally and uses pill-shaped links for touch-friendly targets. */
-.site-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: space-between;
-  align-items: center;
-}
-
-/* Left nav cluster holds the standard workflow links and wraps naturally on narrow screens. */
-.site-nav-left {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-/* Right nav cluster reserves space for utility actions requested as a separate destination. */
-.site-nav-right {
-  display: flex;
-  margin-left: auto;
-}
-
-/* Navigation link tokens define compact pills with smooth hover and focus transitions. */
-.site-nav a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.25rem;
-  padding: 0 var(--space-4);
-  border-radius: 999px;
-  border: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-paper-100) 75%, white);
-  text-decoration: none;
-  font-weight: 500;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
-}
-
-/* Navigation hover behavior mimics Notpla's soft moss highlight accents. */
-.site-nav a:hover {
-  background: var(--color-moss-300);
-  border-color: color-mix(in srgb, var(--color-moss-500) 55%, var(--color-border));
-  transform: translateY(-1px);
 }
 
 /* Main content container keeps consistent margins and fluid width. */
