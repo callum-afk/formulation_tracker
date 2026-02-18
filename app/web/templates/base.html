@@ -64,7 +64,8 @@
     <aside class="sidebar-nav" aria-label="Primary">
       <!-- Sidebar header keeps product identity visible above grouped links. -->
       <div class="sidebar-brand">
-        <h1 class="site-title"><img class="site-logo" src="https://imagedelivery.net/WWB_1xpr0hQZ8HyAj4j9Mg/92e7e1f1-0166-44df-cfa5-5e92ca2dad00/thumb" alt="Notpla logo" /> <span>Formulation Tracker</span></h1>
+        <!-- Brand title text is split across two lines to prevent sidebar overflow and match the reference UI. -->
+        <h1 class="site-title"><img class="site-logo" src="https://imagedelivery.net/WWB_1xpr0hQZ8HyAj4j9Mg/92e7e1f1-0166-44df-cfa5-5e92ca2dad00/thumb" alt="Notpla logo" /> <span class="site-title-text">Formulation<br />Tracker</span></h1>
         <span class="app-version">{{ request.app.state.settings.app_version }}</span>
       </div>
 
@@ -110,6 +111,7 @@
       <!-- Fixed-width inner shell preserves 1800px max width for content only. -->
       <div class="content-inner">
         <!-- Minimal sticky top bar only repeats the current page title for context. -->
+        <!-- Title row stays in a dedicated rounded card to separate page context from panel content. -->
         <header class="content-header">
           <h2 class="content-title">{{ title }}</h2>
         </header>

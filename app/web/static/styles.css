@@ -258,25 +258,29 @@ body {
   margin: 0 auto;
 }
 
-/* Header row anchors current page title while harmonizing with the main content background. */
+/* Header row is presented as its own rounded card so page title is visually separated from forms. */
 .content-header {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-paper-100) 88%, white);
-  backdrop-filter: blur(4px);
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, white 72%, var(--color-paper-100));
+  box-shadow: var(--shadow-panel);
 }
 
-/* Content title mirrors panel heading typography but remains compact in the sticky bar. */
+/* Content title is promoted to sentence case heading style to match the provided target screenshot. */
 .content-title {
   margin: 0;
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-ink-500);
+  font-size: clamp(1.85rem, 1.25rem + 1.15vw, 2.4rem);
+  font-family: var(--font-heading);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-transform: none;
+  color: var(--color-ink-900);
 }
 
 /* Main heading hierarchy uses the brand-forward heading typeface and tighter tracking. */
@@ -341,25 +345,29 @@ a:hover {
   margin-bottom: var(--space-3);
 }
 
-/* Product title mirrors Notpla's calmer editorial hero tone. */
+/* Product title size is tuned so the split two-line brand name stays inside the sidebar card. */
 .site-title {
-  font-size: clamp(1.45rem, 1.1rem + 1.2vw, 2rem);
-  line-height: 1.05;
+  font-size: clamp(1.25rem, 1rem + 1vw, 1.85rem);
+  line-height: 1.08;
 }
 
-
-
-/* Site title is laid out with logo + text while preserving baseline rhythm. */
+/* Site title uses a grid so the logo sits above the first text line and never forces width overflow. */
 .site-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
+  display: inline-grid;
+  align-items: start;
+  justify-items: start;
+  gap: var(--space-2);
   color: var(--color-ink-900);
 }
 
-/* Brand logo scales to title line-height and remains crisp on high-density displays. */
+/* Two-line title text is an inline block so the forced line break renders as a compact stacked label. */
+.site-title-text {
+  display: inline-block;
+}
+
+/* Brand logo is constrained to a stable pixel height so stacked title lines align neatly below it. */
 .site-logo {
-  height: 1.55em;
+  height: 1.2em;
   width: auto;
   object-fit: contain;
   display: inline-block;
@@ -682,9 +690,9 @@ table tbody tr:hover td {
     height: auto;
   }
 
-  /* Content sticky header remains aligned with single-column layout on mobile widths. */
+  /* Mobile title card uses reduced horizontal padding so it keeps breathing room on narrow screens. */
   .content-header {
-    padding: var(--space-3) 0;
+    padding: var(--space-3) var(--space-4);
   }
 }
 
