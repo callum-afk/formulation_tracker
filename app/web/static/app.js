@@ -1864,6 +1864,82 @@ function attachPelletBagsPage() {
   loadMeta().then(loadItems).catch((error) => alert(error.message));
 }
 
+
+// Keep sidebar group expansion state stable across route changes and browser refreshes.
+function attachSidebarNavigation() {
+  // Query all accordion groups rendered by the shared sidebar template.
+  const groups = Array.from(document.querySelectorAll('[data-nav-group]'));
+  // Exit early on pages that do not render the app sidebar.
+  if (groups.length === 0) return;
+
+  // Persisted storage key is versioned so future sidebar changes can migrate safely.
+  const storageKey = 'formulation-tracker.sidebar-groups.v1';
+  // Capture current route path for active-link matching.
+  const currentPath = window.location.pathname;
+
+  // Parse persisted open/closed states with a defensive fallback for malformed JSON.
+  let storedState = {};
+  try {
+    storedState = JSON.parse(window.localStorage.getItem(storageKey) || '{}') || {};
+  } catch {
+    storedState = {};
+  }
+
+  // Track latest state in memory and write back to localStorage after each toggle.
+  const nextState = { ...storedState };
+
+  // Resolve active states per group and hydrate open/closed behaviour.
+  groups.forEach((group) => {
+    // Extract configured stable group id used for persistence.
+    const groupId = group.getAttribute('data-group-id') || '';
+    // Collect only clickable nav items so placeholder rows are ignored.
+    const navLinks = Array.from(group.querySelectorAll('[data-nav-item]'));
+
+    // Detect whether this group contains the current route item.
+    const activeLink = navLinks.find((link) => {
+      const href = link.getAttribute('href') || '';
+      return href === currentPath;
+    });
+
+    // Mark each link's visual active state so only one current route stands out.
+    navLinks.forEach((link) => {
+      const href = link.getAttribute('href') || '';
+      link.classList.toggle('is-active', href === currentPath);
+      if (href === currentPath) {
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.removeAttribute('aria-current');
+      }
+    });
+
+    // Highlight the parent row subtly whenever a child route is active.
+    group.classList.toggle('is-parent-active', Boolean(activeLink));
+
+    // Parent groups auto-expand when a child route is active.
+    if (activeLink) {
+      group.open = true;
+    } else if (groupId in nextState) {
+      // Use persisted explicit state for non-active groups.
+      group.open = Boolean(nextState[groupId]);
+    }
+
+    // Ensure stored state mirrors hydrated state so first render also gets persisted.
+    if (groupId) {
+      nextState[groupId] = Boolean(group.open);
+    }
+
+    // Persist user toggles while preserving group openness across navigation.
+    group.addEventListener('toggle', () => {
+      if (!groupId) return;
+      nextState[groupId] = Boolean(group.open);
+      window.localStorage.setItem(storageKey, JSON.stringify(nextState));
+    });
+  });
+
+  // Persist hydrated defaults once so subsequent route changes are stable.
+  window.localStorage.setItem(storageKey, JSON.stringify(nextState));
+}
+
 // Apply reusable sticky/scroll behavior to server-rendered tables that exist on initial page load.
 Array.from(document.querySelectorAll('table')).forEach((table) => {
   decorateReusableTable(table, 0);
@@ -1885,3 +1961,4 @@ attachLocationPartnerUtilityForm();
 attachCompoundingHowPage();
 attachPelletBagsPage();
 attachBatchDetailFormulations();
+attachSidebarNavigation();
