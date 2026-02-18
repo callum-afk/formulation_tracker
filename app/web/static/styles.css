@@ -56,6 +56,113 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+
+/* App shell splits the viewport into a fixed sidebar and scrollable content column. */
+.app-shell {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* Sidebar panel replaces the previous top navigation with collapsible grouped items. */
+.sidebar-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-right: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-paper-100) 90%, white);
+}
+
+/* Sidebar brand block keeps logo and version metadata together above navigation groups. */
+.sidebar-brand {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* Collapsible nav groups mimic simple sidebar components without extra JS dependencies. */
+.nav-group {
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-card) 72%, white);
+  overflow: hidden;
+}
+
+/* Group headers are styled like compact section labels and support click-to-collapse. */
+.nav-group > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: var(--space-3);
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+/* Hide default disclosure marker so we can keep the visual style clean and consistent. */
+.nav-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Item stack provides predictable spacing for nav links and placeholder labels. */
+.nav-group-items {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/* Sidebar links use compact rounded pills with left alignment for scan-friendly nav. */
+.nav-group-items a,
+.nav-placeholder {
+  display: block;
+  min-height: 2rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  text-decoration: none;
+  font-size: 0.9rem;
+  background: color-mix(in srgb, var(--color-paper-100) 74%, white);
+}
+
+/* Placeholder rows are intentionally muted because those pages are not yet available. */
+.nav-placeholder {
+  color: var(--color-ink-500);
+  border-style: dashed;
+}
+
+/* Sidebar link hover keeps interaction feedback consistent with the existing design language. */
+.nav-group-items a:hover {
+  background: var(--color-moss-300);
+  border-color: color-mix(in srgb, var(--color-moss-500) 55%, var(--color-border));
+}
+
+/* Content column hosts a sticky title header and the page's existing panel content. */
+.content-shell {
+  min-width: 0;
+}
+
+/* Header row anchors current page title without reintroducing the old global nav. */
+.content-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-paper-100) 88%, white);
+  backdrop-filter: blur(4px);
+}
+
+/* Content title mirrors panel heading typography but remains compact in the sticky bar. */
+.content-title {
+  margin: 0;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Main heading hierarchy uses the brand-forward heading typeface and tighter tracking. */
 h1,
 h2,
@@ -231,8 +338,9 @@ a:hover {
 
 /* Main content container keeps consistent margins and fluid width. */
 main {
-  width: min(var(--max-page-width), calc(100% - 2 * var(--space-4)));
-  margin: var(--space-6) auto;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-6) var(--space-4);
 }
 
 /* Panels become card surfaces with rounded corners, quiet borders, and controlled elevation. */
@@ -489,16 +597,17 @@ table tbody tr:hover td {
     border-radius: var(--radius-md);
   }
 
-  /* Let header metadata wrap naturally on small viewports. */
-  .header-top {
-    flex-direction: column;
-    align-items: flex-start;
-    margin-bottom: var(--space-2);
+  /* Collapse app shell to one column and allow sidebar to scroll with the page on phones. */
+  .app-shell {
+    grid-template-columns: 1fr;
   }
 
-  /* Slightly reduce nav link padding to avoid horizontal crowding on phones. */
-  .site-nav a {
-    padding: 0 var(--space-3);
+  /* Sidebar becomes non-sticky on narrow screens to avoid clipping content height. */
+  .sidebar-nav {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
   }
 }
 

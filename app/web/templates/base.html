@@ -7,43 +7,76 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <!-- Sticky header shell styled with Notpla-inspired tokens and pill navigation. -->
-  <header class="site-header">
-    <!-- Inner header container keeps title and nav aligned to page width. -->
-    <div class="header-inner">
-      <div class="header-top">
+  <!-- Page shell now uses a permanent sidebar so nav groups can be collapsed/expanded. -->
+  <div class="app-shell">
+    <!-- Sidebar contains all numbered sections requested in the rebuilt navigation. -->
+    <aside class="sidebar-nav" aria-label="Primary">
+      <!-- Sidebar header keeps product identity visible above grouped links. -->
+      <div class="sidebar-brand">
         <h1 class="site-title"><img class="site-logo" src="https://imagedelivery.net/WWB_1xpr0hQZ8HyAj4j9Mg/92e7e1f1-0166-44df-cfa5-5e92ca2dad00/thumb" alt="Notpla logo" /> <span>Formulation Tracker</span></h1>
+        <span class="app-version">{{ request.app.state.settings.app_version }}</span>
       </div>
-      <nav class="site-nav">
-        <!-- Primary application navigation keeps core workflows grouped on the left. -->
-        <div class="site-nav-left">
-          <a href="/ingredients">Ingredients</a>
-          <a href="/batches">Batches</a>
-          <a href="/sets">Sets</a>
-          <a href="/dry_weights">Dry Weights</a>
-          <a href="/batch_selection">Batch Selection</a>
-          <a href="/formulations/ui">Formulations</a>
-          <a href="/location_codes">Location Codes</a>
-          <a href="/compounding_how">Compounding - How</a>
-          <a href="/pellet_bags">Pellet Bags</a>
+
+      <!-- Group 1: ingredient workflows with renamed labels. -->
+      <details class="nav-group" open>
+        <summary>1 INGREDIENTS</summary>
+        <div class="nav-group-items">
+          <a href="/ingredients">1.1 Ingredient SKUs</a>
+          <a href="/batches">1.2 Ingredient Batches</a>
         </div>
-        <!-- Utilities shortcut is intentionally pinned to the right as requested. -->
-        <div class="site-nav-right">
-          <a href="/utilities">Utilities</a>
+      </details>
+
+      <!-- Group 2: formulation workflows with the old formulations page merged into batch selection. -->
+      <details class="nav-group" open>
+        <summary>2 FORMULATION</summary>
+        <div class="nav-group-items">
+          <a href="/sets">2.1 Formulation Sets</a>
+          <a href="/dry_weights">2.2 Dry Weights</a>
+          <a href="/batch_selection">2.3 Batch Selection</a>
         </div>
-      </nav>
+      </details>
+
+      <!-- Group 3: mixing workflows with updated machine/how labels. -->
+      <details class="nav-group" open>
+        <summary>3 MIXING</summary>
+        <div class="nav-group-items">
+          <a href="/location_codes">3.1 Machine</a>
+          <a href="/compounding_how">3.2 How</a>
+          <a href="/pellet_bags">3.3 Pellet Bags</a>
+        </div>
+      </details>
+
+      <!-- Group 4: placeholder conversion pages are intentionally not linked yet. -->
+      <details class="nav-group" open>
+        <summary>4 CONVERSION 1 Film roll / coated board</summary>
+        <div class="nav-group-items">
+          <span class="nav-placeholder">4.1 Context</span>
+          <span class="nav-placeholder">4.2 How</span>
+          <span class="nav-placeholder">4.3 Output</span>
+        </div>
+      </details>
+
+      <!-- Group 9: system utility access is grouped separately as requested. -->
+      <details class="nav-group" open>
+        <summary>9 SYSTEM</summary>
+        <div class="nav-group-items">
+          <a href="/utilities">9.1 Utilities</a>
+        </div>
+      </details>
+    </aside>
+
+    <!-- Content region keeps route templates unchanged while old top nav is removed. -->
+    <div class="content-shell">
+      <!-- Minimal sticky top bar only repeats the current page title for context. -->
+      <header class="content-header">
+        <h2 class="content-title">{{ title }}</h2>
+      </header>
+      <!-- Main content block for page-specific template sections. -->
+      <main>
+        {% block content %}{% endblock %}
+      </main>
     </div>
-  </header>
-  <!-- Main content block preserves existing route behavior while applying updated layout styles. -->
-  <main>
-    {% block content %}{% endblock %}
-  </main>
-  <!-- Footer keeps deploy-updated git metadata visible and out of the header flow. -->
-  <footer class="site-footer">
-    <div class="site-footer-inner">
-      <span class="app-version">{{ request.app.state.settings.app_version }}</span>
-    </div>
-  </footer>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>
