@@ -81,7 +81,7 @@
           <!-- Group content wraps link rows for smooth open/close animation. -->
           <div class="nav-group-content">
             <div class="nav-group-items">
-              {% for item in group.items %}
+              {% for item in group["items"] %}
                 {% if item.href %}
                 <!-- Clickable destination rows include a marker class for active-route logic. -->
                 <a href="{{ item.href }}" data-nav-item>{{ item.label }}</a>
