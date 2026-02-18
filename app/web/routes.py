@@ -24,7 +24,7 @@ async def home(
     items = bigquery.list_ingredients(filters)
     return templates.TemplateResponse(
         "ingredients.html",
-        {"request": request, "title": "Ingredients", "items": items, "q": q or ""},
+        {"request": request, "title": "Ingredient SKUs", "items": items, "q": q or ""},
     )
 
 
@@ -34,7 +34,7 @@ async def ingredients(request: Request, q: str | None = None, bigquery: BigQuery
     items = bigquery.list_ingredients(filters)
     return templates.TemplateResponse(
         "ingredients.html",
-        {"request": request, "title": "Ingredients", "items": items, "q": q or ""},
+        {"request": request, "title": "Ingredient SKUs", "items": items, "q": q or ""},
     )
 
 
@@ -60,7 +60,7 @@ async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigq
     items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "batches.html",
-        {"request": request, "title": "Batches", "items": items},
+        {"request": request, "title": "Ingredient Batches", "items": items},
     )
 
 
@@ -88,7 +88,7 @@ async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquer
     items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "sets.html",
-        {"request": request, "title": "Ingredient Sets", "items": items},
+        {"request": request, "title": "Formulation Sets", "items": items},
     )
 
 
@@ -96,7 +96,7 @@ async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquer
 async def dry_weights(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "dry_weights.html",
-        {"request": request, "title": "Dry Weight Variants"},
+        {"request": request, "title": "Dry Weights"},
     )
 
 
@@ -108,20 +108,13 @@ async def batch_selection(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/formulations/ui", response_class=HTMLResponse)
-async def formulations(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        "formulations.html",
-        {"request": request, "title": "Formulations"},
-    )
-
 
 @router.get("/location_codes", response_class=HTMLResponse)
 async def location_codes(request: Request) -> HTMLResponse:
     # Serve the location-ID workflow page for production partner/date code generation and partner management.
     return templates.TemplateResponse(
         "location_codes.html",
-        {"request": request, "title": "Location Codes"},
+        {"request": request, "title": "Machine"},
     )
 
 
@@ -132,7 +125,7 @@ async def compounding_how(request: Request) -> HTMLResponse:
     # Serve compounding-how creation and edit workflow page.
     return templates.TemplateResponse(
         "compounding_how.html",
-        {"request": request, "title": "Compounding - How"},
+        {"request": request, "title": "How"},
     )
 
 @router.get("/pellet_bags", response_class=HTMLResponse)

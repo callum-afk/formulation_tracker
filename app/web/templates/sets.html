@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
-  <h2>Create set</h2>
+  <h2>Create formulation set</h2>
   <form id="set-form" class="form-stack">
     <div class="grid" id="sku-selects">
       {# Start with 6 SKU selectors by default, while still allowing users to add more dynamically. #}
@@ -33,7 +33,7 @@
 </template>
 
 <section class="panel">
-  <h2>Existing sets</h2>
+  <h2>Existing formulation sets</h2>
   <form id="sets-filter-form" class="inline-actions">
     <label>Search set code or SKU <input name="q" placeholder="e.g. AB or 3_0012_25" /></label>
     <button type="submit">Search</button>

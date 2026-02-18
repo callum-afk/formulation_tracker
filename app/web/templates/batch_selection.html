@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+<!-- Section for creating and persisting batch variant assignments from set + dry weight codes. -->
 <section class="panel">
-  <h2>Create batch variant</h2>
+  <h2>Batch Selection</h2>
   <form id="batch-variant-form" class="form-stack">
     <div class="grid">
       <label>Set code <input name="set_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" required /></label>
@@ -19,6 +20,7 @@
   </form>
 </section>
 
+<!-- Section for loading existing batch variants by set + weight code filters. -->
 <section class="panel">
   <h2>Lookup variants</h2>
   <form id="batch-variant-lookup-form" class="form-stack">
@@ -34,6 +36,38 @@
         <tr><td>No variants loaded.</td></tr>
       </tbody>
     </table>
+  </div>
+</section>
+
+<!-- Former formulations page content now lives directly on Batch Selection as requested. -->
+<section class="panel">
+  <h2>Formulation Table</h2>
+  <form id="formulations-filter-form" class="form-stack">
+    <div class="grid">
+      <label>Set code <input name="set_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" /></label>
+      <label>Weight code <input name="weight_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" /></label>
+      <label>Batch variant code <input name="batch_variant_code" maxlength="2" pattern="[A-Za-z]{2}" placeholder="AB" /></label>
+      <label>Contains SKU <input name="sku" placeholder="e.g. 3_0012_25" /></label>
+    </div>
+    <button type="submit">Search</button>
+  </form>
+  <div id="formulations-results">
+    <table>
+      <thead>
+        <tr>
+          <th>Formulation</th><th>Created</th><th>Owner</th>
+          <th>SKU Count</th><th>SKUs</th><th>Dry Weights (%)</th><th>Batches</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td colspan="7">No formulations loaded.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="inline-actions" id="formulations-pagination">
+    <button type="button" id="formulations-prev-page">Previous</button>
+    <span id="formulations-page-label">Page 1</span>
+    <button type="button" id="formulations-next-page">Next</button>
   </div>
 </section>
 {% endblock %}
