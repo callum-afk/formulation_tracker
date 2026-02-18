@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <!-- Page shell now uses a permanent sidebar so nav groups can be collapsed/expanded. -->
+  <!-- Page shell keeps navigation on the left and main content on the right. -->
   <div class="app-shell">
-    <!-- Sidebar contains all numbered sections requested in the rebuilt navigation. -->
+    <!-- Sidebar mirrors the reference: compact brand block, grouped links, and profile footer. -->
     <aside class="sidebar-nav" aria-label="Primary">
       <!-- Sidebar header keeps product identity visible above grouped links. -->
       <div class="sidebar-brand">
@@ -17,52 +17,61 @@
         <span class="app-version">{{ request.app.state.settings.app_version }}</span>
       </div>
 
-      <!-- Group 1: ingredient workflows with renamed labels. -->
+      <!-- Group 1: ingredient workflows stay expanded by default for quick daily access. -->
       <details class="nav-group" open>
-        <summary>1 INGREDIENTS</summary>
+        <summary><span>Ingredients</span></summary>
         <div class="nav-group-items">
-          <a href="/ingredients">1.1 Ingredient SKUs</a>
-          <a href="/batches">1.2 Ingredient Batches</a>
+          <a href="/ingredients">Ingredient SKUs</a>
+          <a href="/batches">Ingredient Batches</a>
         </div>
       </details>
 
-      <!-- Group 2: formulation workflows with the old formulations page merged into batch selection. -->
+      <!-- Group 2: formulation workflows are grouped under a single collapsible heading. -->
       <details class="nav-group" open>
-        <summary>2 FORMULATION</summary>
+        <summary><span>Formulation</span></summary>
         <div class="nav-group-items">
-          <a href="/sets">2.1 Formulation Sets</a>
-          <a href="/dry_weights">2.2 Dry Weights</a>
-          <a href="/batch_selection">2.3 Batch Selection</a>
+          <a href="/sets">Formulation Sets</a>
+          <a href="/dry_weights">Dry Weights</a>
+          <a href="/batch_selection">Batch Selection</a>
         </div>
       </details>
 
-      <!-- Group 3: mixing workflows with updated machine/how labels. -->
+      <!-- Group 3: mixing workflows remain grouped to match production process order. -->
       <details class="nav-group" open>
-        <summary>3 MIXING</summary>
+        <summary><span>Mixing</span></summary>
         <div class="nav-group-items">
-          <a href="/location_codes">3.1 Machine</a>
-          <a href="/compounding_how">3.2 How</a>
-          <a href="/pellet_bags">3.3 Pellet Bags</a>
+          <a href="/location_codes">Machine</a>
+          <a href="/compounding_how">How</a>
+          <a href="/pellet_bags">Pellet Bags</a>
         </div>
       </details>
 
-      <!-- Group 4: placeholder conversion pages are intentionally not linked yet. -->
+      <!-- Group 4: placeholders keep roadmap pages visible without enabling broken routes. -->
       <details class="nav-group" open>
-        <summary>4 CONVERSION 1 Film roll / coated board</summary>
+        <summary><span>Conversion 1 Film roll / coated board</span></summary>
         <div class="nav-group-items">
-          <span class="nav-placeholder">4.1 Context</span>
-          <span class="nav-placeholder">4.2 How</span>
-          <span class="nav-placeholder">4.3 Output</span>
+          <span class="nav-placeholder">Context</span>
+          <span class="nav-placeholder">How</span>
+          <span class="nav-placeholder">Output</span>
         </div>
       </details>
 
-      <!-- Group 9: system utility access is grouped separately as requested. -->
+      <!-- Group 5: system tools stay separated from production workflow navigation. -->
       <details class="nav-group" open>
-        <summary>9 SYSTEM</summary>
+        <summary><span>System</span></summary>
         <div class="nav-group-items">
-          <a href="/utilities">9.1 Utilities</a>
+          <a href="/utilities">Utilities</a>
         </div>
       </details>
+
+      <!-- Footer profile card anchors the sidebar similarly to the design reference. -->
+      <div class="sidebar-user-card" aria-label="Signed in user">
+        <div>
+          <strong>{{ request.state.actor if request.state.actor else "Unknown user" }}</strong>
+          <small>Formulation team</small>
+        </div>
+        <span class="sidebar-user-icon" aria-hidden="true">↪</span>
+      </div>
     </aside>
 
     <!-- Content region keeps route templates unchanged while old top nav is removed. -->
