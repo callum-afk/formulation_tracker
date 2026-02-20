@@ -1069,8 +1069,8 @@ class BigQueryService:
         optional_fields: Dict[str, Any],
         created_by: Optional[str],
     ) -> List[Dict[str, Any]]:
-        # Mint one contiguous sequence range and insert all records with deterministic code token formatting.
-        scope = f"pellet_bag:{product_type}"
+        # Use one shared counter scope so PR/PF/PI bag numbering increments globally across all product types.
+        scope = "pellet_bag:global"
         start_sequence = self.allocate_counter_range("pellet_bag_sequence", scope, start_value=0, count=number_of_bags)
         compounding_tokens = compounding_how_code.split()
         created_items: List[Dict[str, Any]] = []
