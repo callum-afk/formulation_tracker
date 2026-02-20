@@ -545,6 +545,13 @@ table {
   z-index: 5;
 }
 
+
+/* Pellet bag code cells preserve full token strings without wrapping so complete codes stay visible. */
+.js-reusable-table .pellet-code-cell {
+  min-width: 21rem;
+  white-space: nowrap;
+}
+
 /* Reusable pagination row keeps controls consistent across all table pages. */
 .table-pagination-controls {
   display: flex;

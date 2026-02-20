@@ -1684,6 +1684,19 @@ function attachPelletBagsPage() {
   const injectionAssignee = document.getElementById('pellet-injection-assignee');
   const filmAssignee = document.getElementById('pellet-film-assignee');
 
+  // Cache dropdown option arrays so inline edit cells can mirror create-form selects exactly.
+  const pelletMetaOptions = {
+    purpose: [],
+    reference_sample_taken: [],
+    qc_status: [],
+    long_moisture_status: [],
+    density_status: [],
+    injection_moulding_status: [],
+    film_forming_status: [],
+    injection_moulding_assignee_email: [],
+    film_forming_assignee_email: [],
+  };
+
   function numericOrNull(value) {
     // Convert numeric inputs to Number and keep empty values as null for API compatibility.
     if (value === null || value === undefined || value === '') return null;
@@ -1724,10 +1737,27 @@ function attachPelletBagsPage() {
     appendSelectOptions(filmStatus, meta.injection_film_status_options || []);
     appendSelectOptions(injectionAssignee, meta.assignee_emails || []);
     appendSelectOptions(filmAssignee, meta.assignee_emails || []);
+
+    // Persist metadata locally so table edit mode can reuse the same constrained option lists as the create form.
+    pelletMetaOptions.purpose = meta.purpose_options || [];
+    pelletMetaOptions.reference_sample_taken = meta.reference_sample_options || [];
+    pelletMetaOptions.qc_status = meta.qc_status_options || [];
+    pelletMetaOptions.long_moisture_status = meta.status_options || [];
+    pelletMetaOptions.density_status = meta.status_options || [];
+    pelletMetaOptions.injection_moulding_status = meta.injection_film_status_options || [];
+    pelletMetaOptions.film_forming_status = meta.injection_film_status_options || [];
+    pelletMetaOptions.injection_moulding_assignee_email = meta.assignee_emails || [];
+    pelletMetaOptions.film_forming_assignee_email = meta.assignee_emails || [];
   }
 
-  function editableCell(row, value, name, type = 'text') {
-    // Build per-row edit controls for optional fields using plain text rendering and input value binding.
+  function registerEditableControl(row, control) {
+    // Register each editable control so the row-level Edit/Save action can toggle disabled state and collect payload values.
+    row._editable = row._editable || [];
+    row._editable.push(control);
+  }
+
+  function editableInputCell(row, value, name, type = 'text') {
+    // Render editable text/number cells for free-text fields that are not dropdown constrained.
     const td = document.createElement('td');
     const input = document.createElement('input');
     input.type = type;
@@ -1735,8 +1765,20 @@ function attachPelletBagsPage() {
     input.name = name;
     input.disabled = true;
     td.appendChild(input);
-    row._editable = row._editable || [];
-    row._editable.push(input);
+    registerEditableControl(row, input);
+    return td;
+  }
+
+  function editableSelectCell(row, value, name, options) {
+    // Render editable select cells so edit mode uses the same dropdown workflow as creation optional fields.
+    const td = document.createElement('td');
+    const select = document.createElement('select');
+    appendSelectOptions(select, options || []);
+    select.name = name;
+    select.value = value ?? '';
+    select.disabled = true;
+    td.appendChild(select);
+    registerEditableControl(row, select);
     return td;
   }
 
@@ -1747,7 +1789,7 @@ function attachPelletBagsPage() {
     clearElement(output);
     const table = document.createElement('table');
     const headers = [
-      'Pellet bag code','Compounding how code','Product type','Bag mass kg','Remaining mass kg','Short moisture percent','Purpose','Reference sample taken','QC status','Long moisture status','Density status','Injection moulding status','Injection moulding assignee','Film forming status','Film forming assignee','Customer','Notes','Created at','Created by','Actions'
+      'Pellet bag code','Product type','Bag mass kg','Remaining mass kg','Short moisture percent','Purpose','Reference sample taken','QC status','Long moisture status','Density status','Injection moulding status','Injection moulding assignee','Film forming status','Film forming assignee','Customer','Notes','Created at','Created by','Actions'
     ];
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
@@ -1762,31 +1804,32 @@ function attachPelletBagsPage() {
     const tbody = document.createElement('tbody');
     items.forEach((item) => {
       const row = document.createElement('tr');
-      const readonlyValues = [
-        item.pellet_bag_code,
-        item.compounding_how_code,
-        item.product_type,
-        item.bag_mass_kg,
-      ];
+      const pelletCodeCell = document.createElement('td');
+      // Keep full pellet bag codes on one line and wide enough so token groups remain legible.
+      pelletCodeCell.textContent = item.pellet_bag_code ?? '';
+      pelletCodeCell.classList.add('pellet-code-cell');
+      row.appendChild(pelletCodeCell);
+
+      const readonlyValues = [item.product_type, item.bag_mass_kg];
       readonlyValues.forEach((value) => {
         const td = document.createElement('td');
         td.textContent = value ?? '';
         row.appendChild(td);
       });
 
-      row.appendChild(editableCell(row, item.remaining_mass_kg, 'remaining_mass_kg', 'number'));
-      row.appendChild(editableCell(row, item.short_moisture_percent, 'short_moisture_percent', 'number'));
-      row.appendChild(editableCell(row, item.purpose, 'purpose'));
-      row.appendChild(editableCell(row, item.reference_sample_taken, 'reference_sample_taken'));
-      row.appendChild(editableCell(row, item.qc_status, 'qc_status'));
-      row.appendChild(editableCell(row, item.long_moisture_status, 'long_moisture_status'));
-      row.appendChild(editableCell(row, item.density_status, 'density_status'));
-      row.appendChild(editableCell(row, item.injection_moulding_status, 'injection_moulding_status'));
-      row.appendChild(editableCell(row, item.injection_moulding_assignee_email, 'injection_moulding_assignee_email'));
-      row.appendChild(editableCell(row, item.film_forming_status, 'film_forming_status'));
-      row.appendChild(editableCell(row, item.film_forming_assignee_email, 'film_forming_assignee_email'));
-      row.appendChild(editableCell(row, item.customer, 'customer'));
-      row.appendChild(editableCell(row, item.notes, 'notes'));
+      row.appendChild(editableInputCell(row, item.remaining_mass_kg, 'remaining_mass_kg', 'number'));
+      row.appendChild(editableInputCell(row, item.short_moisture_percent, 'short_moisture_percent', 'number'));
+      row.appendChild(editableSelectCell(row, item.purpose, 'purpose', pelletMetaOptions.purpose));
+      row.appendChild(editableSelectCell(row, item.reference_sample_taken, 'reference_sample_taken', pelletMetaOptions.reference_sample_taken));
+      row.appendChild(editableSelectCell(row, item.qc_status, 'qc_status', pelletMetaOptions.qc_status));
+      row.appendChild(editableSelectCell(row, item.long_moisture_status, 'long_moisture_status', pelletMetaOptions.long_moisture_status));
+      row.appendChild(editableSelectCell(row, item.density_status, 'density_status', pelletMetaOptions.density_status));
+      row.appendChild(editableSelectCell(row, item.injection_moulding_status, 'injection_moulding_status', pelletMetaOptions.injection_moulding_status));
+      row.appendChild(editableSelectCell(row, item.injection_moulding_assignee_email, 'injection_moulding_assignee_email', pelletMetaOptions.injection_moulding_assignee_email));
+      row.appendChild(editableSelectCell(row, item.film_forming_status, 'film_forming_status', pelletMetaOptions.film_forming_status));
+      row.appendChild(editableSelectCell(row, item.film_forming_assignee_email, 'film_forming_assignee_email', pelletMetaOptions.film_forming_assignee_email));
+      row.appendChild(editableInputCell(row, item.customer, 'customer'));
+      row.appendChild(editableInputCell(row, item.notes, 'notes'));
 
       const createdAt = document.createElement('td');
       createdAt.textContent = item.created_at || '';
