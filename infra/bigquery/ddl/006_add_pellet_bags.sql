@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.pellet_bags` (
   pellet_bag_id STRING NOT NULL,
   pellet_bag_code STRING NOT NULL,
-  pellet_bag_code_tokens ARRAY<STRING> NOT NULL,
+  pellet_bag_code_tokens ARRAY<STRING>,
   compounding_how_code STRING NOT NULL,
   product_type STRING NOT NULL,
   sequence_number INT64 NOT NULL,

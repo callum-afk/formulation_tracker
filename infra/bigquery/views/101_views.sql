@@ -21,7 +21,7 @@ SELECT
 FROM `PROJECT_ID.DATASET_ID.dry_weight_variants` v
 JOIN `PROJECT_ID.DATASET_ID.dry_weight_items` i
 ON i.set_code = v.set_code AND i.weight_code = v.weight_code
-GROUP BY v.set_code, v.weight_code, v.weight_hash, v.created_at;
+GROUP BY v.set_code, v.weight_code, v.weight_hash, v.created_at, v.created_by;
 
 CREATE OR REPLACE VIEW `PROJECT_ID.DATASET_ID.v_batch_variants` AS
 SELECT
@@ -30,6 +30,7 @@ SELECT
   v.batch_variant_code,
   v.batch_hash,
   v.created_at,
+  ANY_VALUE(v.created_by) AS created_by,
   ARRAY_AGG(
     STRUCT(i.sku AS sku, i.ingredient_batch_code AS ingredient_batch_code)
     ORDER BY i.sku
