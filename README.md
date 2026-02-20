@@ -43,3 +43,13 @@ Optional:
 - For Cloud Run deployment, ensure `AUTH_MODE=cloudrun` plus required vars: `PROJECT_ID`, `DATASET_ID=formulation_app_eu`, `REGION=europe-west2`, `BQ_LOCATION=europe-west2`, `BUCKET_MSDS`, `BUCKET_SPECS`, and `CLOUD_RUN_SERVICE_NAME`.
 - BigQuery counters are implemented with an optimistic concurrency update loop to avoid collisions for low-concurrency internal usage.
 - Pellet bag management is available at `/pellet_bags` with bulk code minting, editable optional metadata, and product-type sequence namespaces backed by `pellet_bags` + `pellet_bag_assignees` BigQuery tables.
+
+## BigQuery reset/rebuild job
+
+Use the executable script below when you need to wipe and rebuild the BigQuery dataset schema from this repository's SQL files.
+
+```bash
+./scripts/rebuild_bigquery.py --confirm-destroy
+```
+
+The script requires `PROJECT_ID` and `DATASET_ID` and will use `BQ_LOCATION` (or `REGION`) for dataset creation and query execution.
