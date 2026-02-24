@@ -245,85 +245,129 @@ async def conversion1_context_submit(request: Request, bigquery: BigQueryService
 @router.get("/conversion1/how", response_class=HTMLResponse)
 async def conversion1_how_page(
     request: Request,
-    context_code: str | None = None,
-    process_id: str | None = None,
-    failure_mode: str | None = None,
-    search: str | None = None,
+    q: str | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> HTMLResponse:
     # Clamp pagination values to keep list queries within global safety bounds.
     safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
-    rows, total = bigquery.list_conversion1_how(
-        context_code=(context_code or "").strip() or None,
-        process_id=(process_id or "").strip() or None,
-        failure_mode=(failure_mode or "").strip() or None,
-        search=(search or "").strip() or None,
-        page=max(1, page),
+    safe_page = max(1, page)
+    # Load conversion-code rows using optional text filtering on the generated conversion code.
+    rows, total = bigquery.list_conversion1_codes_paginated(
+        search=(q or "").strip() or None,
+        page=safe_page,
         page_size=safe_page_size,
     )
+    # Fetch active pellet bag IDs for dropdown + manual validation.
+    pellet_codes = bigquery.list_pellet_bag_codes()
+    # Fetch partner-machine options from the same source used by Mixing Machine page.
+    raw_options = bigquery.get_mixing_partner_machine_options()
+    # Build normalized option payload where each select value maps to one partner + machine combination.
+    partner_machine_options = [
+        {
+            "key": f"{(option.get('partner_code') or '').strip()}||{(option.get('machine_code') or '').strip()}",
+            "partner_code": (option.get("partner_code") or "").strip(),
+            "machine_code": (option.get("machine_code") or "").strip(),
+            "label": f"{(option.get('partner_name') or (option.get('partner_code') or '')).strip()} - {(option.get('machine_code') or '').strip()}",
+        }
+        for option in raw_options
+    ]
+    # Keep only complete options to avoid presenting invalid rows in the selector.
+    partner_machine_options = [row for row in partner_machine_options if row["partner_code"] and row["machine_code"]]
     return templates.TemplateResponse(
         "conversion1_how.html",
         {
             "request": request,
-            "title": "Conversion 1 How",
+            "title": "Conversion 1",
             "errors": [],
             "result": None,
             "rows": _to_json_safe(rows),
-            "failure_modes": FAILURE_MODES,
-            "filters": {
-                "context_code": context_code or "",
-                "process_id": process_id or "",
-                "failure_mode": failure_mode or "",
-                "search": search or "",
-            },
+            "filters": {"q": q or ""},
             "pagination": {
-                "page": max(1, page),
+                "page": safe_page,
                 "page_size": safe_page_size,
                 "total": total,
-                "has_prev": page > 1,
-                "has_next": page * safe_page_size < total,
+                "has_prev": safe_page > 1,
+                "has_next": safe_page * safe_page_size < total,
             },
             "form_data": {},
+            "pellet_codes": pellet_codes,
+            "partner_machine_options": partner_machine_options,
+            "partner_machine_labels": sorted({row["label"] for row in partner_machine_options}),
         },
     )
 
 
 @router.post("/conversion1/how", response_class=HTMLResponse)
 async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Parse and normalize conversion-how form fields for validation and persistence.
+    # Parse and normalize Conversion 1 create-form inputs.
     form = await request.form()
-    context_code = " ".join(str(form.get("context_code", "")).strip().split())
-    notes = str(form.get("notes", "")).strip() or None
-    failure_mode = str(form.get("failure_mode", "")).strip() or None
-    setup_link = str(form.get("setup_link", "")).strip() or None
-    processed_data_link = str(form.get("processed_data_link", "")).strip() or None
+    pellet_code_select = " ".join(str(form.get("pellet_code_select", "")).strip().split())
+    pellet_code_manual = " ".join(str(form.get("pellet_code_manual", "")).strip().split())
+    conversion_partner_key = str(form.get("conversion_partner_key", "")).strip()
+    conversion_partner_manual = " ".join(str(form.get("conversion_partner_manual", "")).strip().split())
+    production_date = str(form.get("production_date", "")).strip()
+    # Prefer manual pellet entry when present; otherwise use dropdown selection.
+    pellet_code = pellet_code_manual or pellet_code_select
     errors: list[str] = []
-    # Require context code input to generate deterministic conversion-how identifiers.
-    if not context_code:
-        errors.append("Context Code is required.")
-    # Require that provided context code exists before minting a process code.
-    if context_code and not bigquery.get_conversion1_context(context_code):
-        errors.append("Context Code was not found. Please generate it on Conversion 1 Context first.")
-    # Validate selected failure mode against approved controlled vocabulary.
-    if failure_mode and failure_mode not in FAILURE_MODES:
-        errors.append("Invalid failure mode.")
+    # Load valid option sets once so dropdown and manual entries both validate against persisted data.
+    pellet_codes = bigquery.list_pellet_bag_codes()
+    raw_options = bigquery.get_mixing_partner_machine_options()
+    partner_machine_options = [
+        {
+            "key": f"{(option.get('partner_code') or '').strip()}||{(option.get('machine_code') or '').strip()}",
+            "partner_code": (option.get("partner_code") or "").strip(),
+            "machine_code": (option.get("machine_code") or "").strip(),
+            "label": f"{(option.get('partner_name') or (option.get('partner_code') or '')).strip()} - {(option.get('machine_code') or '').strip()}",
+        }
+        for option in raw_options
+    ]
+    # Keep only complete options so validation and dropdown use the same clean source.
+    partner_machine_options = [row for row in partner_machine_options if row["partner_code"] and row["machine_code"]]
+    option_by_key = {row["key"]: row for row in partner_machine_options}
+    option_by_label = {row["label"]: row for row in partner_machine_options}
+    # Enforce pellet code presence and existence in the active pellet bag list.
+    if not pellet_code:
+        errors.append("Pellet ID is required.")
+    elif pellet_code not in set(pellet_codes):
+        errors.append("Pellet ID was not found. Please use a valid existing pellet ID.")
+    # Resolve partner-machine either from dropdown key or manual BF-style text and ensure it exists.
+    selected_option = option_by_key.get(conversion_partner_key)
+    if not selected_option and conversion_partner_manual:
+        selected_option = option_by_label.get(conversion_partner_manual)
+    if not selected_option:
+        errors.append("Conversion Partner must match an existing partner-machine option.")
+    # Convert calendar date input into YYMMDD token required by persisted code format.
+    date_yymmdd = ""
+    if not production_date:
+        errors.append("Date of production is required.")
+    else:
+        try:
+            date_yymmdd = datetime.strptime(production_date, "%Y-%m-%d").strftime("%y%m%d")
+        except ValueError:
+            errors.append("Date of production must be a valid calendar date.")
     result = None
-    if not errors:
-        # Persist conversion-how row and return generated How code + process metadata.
-        result = bigquery.create_or_update_conversion1_how(
-            context_code=context_code,
-            notes=notes,
-            failure_mode=failure_mode,
-            setup_link=setup_link,
-            processed_data_link=processed_data_link,
+    if not errors and selected_option:
+        # Ensure deterministic context exists before minting the next conversion code suffix.
+        context = bigquery.create_or_get_conversion1_context(
+            pellet_code=pellet_code,
+            partner_code=selected_option["partner_code"],
+            machine_code=selected_option["machine_code"],
+            date_yymmdd=date_yymmdd,
             user_email=request.state.user_email,
         )
-    rows, total = bigquery.list_conversion1_how(
-        context_code=None,
-        process_id=None,
-        failure_mode=None,
+        # Persist generated conversion code row using the same code generator as existing Conversion 1 flow.
+        result = bigquery.create_or_update_conversion1_how(
+            context_code=str(context.get("context_code") or ""),
+            notes=None,
+            failure_mode=None,
+            setup_link=None,
+            processed_data_link=None,
+            user_email=request.state.user_email,
+        )
+    # Reload first table page after create attempt so users see newest rows and validation feedback together.
+    rows, total = bigquery.list_conversion1_codes_paginated(
         search=None,
         page=1,
         page_size=DEFAULT_PAGE_SIZE,
@@ -332,12 +376,11 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
         "conversion1_how.html",
         {
             "request": request,
-            "title": "Conversion 1 How",
+            "title": "Conversion 1",
             "errors": errors,
             "result": _to_json_safe(result) if result else None,
             "rows": _to_json_safe(rows),
-            "failure_modes": FAILURE_MODES,
-            "filters": {"context_code": "", "process_id": "", "failure_mode": "", "search": ""},
+            "filters": {"q": ""},
             "pagination": {
                 "page": 1,
                 "page_size": DEFAULT_PAGE_SIZE,
@@ -346,12 +389,15 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
                 "has_next": DEFAULT_PAGE_SIZE < total,
             },
             "form_data": {
-                "context_code": context_code,
-                "notes": notes or "",
-                "failure_mode": failure_mode or "",
-                "setup_link": setup_link or "",
-                "processed_data_link": processed_data_link or "",
+                "pellet_code_select": pellet_code_select,
+                "pellet_code_manual": pellet_code_manual,
+                "conversion_partner_key": conversion_partner_key,
+                "conversion_partner_manual": conversion_partner_manual,
+                "production_date": production_date,
             },
+            "pellet_codes": pellet_codes,
+            "partner_machine_options": partner_machine_options,
+            "partner_machine_labels": sorted(option_by_label.keys()),
         },
         status_code=400 if errors else 200,
     )
