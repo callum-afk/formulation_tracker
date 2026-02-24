@@ -57,6 +57,62 @@ class PelletBagTests(unittest.TestCase):
         )
         self.assertEqual(created[0]["pellet_bag_code"], "AC AB AB AM 260205 AC PF 0012")
 
+    def test_list_pellet_bags_with_meaningful_status_selects_assignee_column(self) -> None:
+        # Ensure the dashboard status query exposes assigned_to with the right assignee fallback per stream.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+
+        # Capture SQL text and return no rows so we can assert query composition only.
+        captured = {}
+
+        class _FakeResult:
+            def result(self):
+                return []
+
+        def fake_run(query, params):
+            captured["query"] = query
+            return _FakeResult()
+
+        service._run = fake_run
+
+        service.list_pellet_bags_with_meaningful_status("injection_moulding_status")
+
+        self.assertIn("AS assigned_to", captured["query"])
+        self.assertIn("COALESCE(injection_moulding_assignee_email, created_by)", captured["query"])
+
+    def test_get_pellet_bag_detail_includes_formulations_payload(self) -> None:
+        # Ensure pellet detail response now carries formulations for the shared formulation table component.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+
+        # Return one pellet row and one compounding row while stubbing formulation lookup separately.
+        pellet_row = [{"pellet_bag_code": "AB", "compounding_how_code": "CODE", "is_active": True}]
+        compounding_row = [{"processing_code": "CODE", "is_active": True}]
+
+        class _FakeResult:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def result(self):
+                return self._rows
+
+        call_count = {"index": 0}
+
+        def fake_run(query, params):
+            call_count["index"] += 1
+            if call_count["index"] == 1:
+                return _FakeResult(pellet_row)
+            return _FakeResult(compounding_row)
+
+        service._run = fake_run
+        service.list_formulations_for_pellet_bag = MagicMock(return_value=[{"set_code": "AB"}])
+
+        detail = service.get_pellet_bag_detail("AB")
+
+        self.assertEqual(detail["formulations"], [{"set_code": "AB"}])
+
 
 if __name__ == "__main__":
     unittest.main()

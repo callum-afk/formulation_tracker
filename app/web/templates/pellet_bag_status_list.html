@@ -3,15 +3,16 @@
 <section class="panel">
   <h2>Status list for {{ status_column }}</h2>
   <table>
-    <thead><tr><th>Pellet bag code</th><th>Status</th></tr></thead>
+    <thead><tr><th>Pellet bag code</th><th>Status</th><th>Assigned</th></tr></thead>
     <tbody>
       {% for item in items %}
       <tr>
         <td><a href="/pellet-bags/{{ item.pellet_bag_code }}">{{ item.pellet_bag_code }}</a></td>
         <td>{{ item.status_value }}</td>
+        <td>{{ item.assigned_to or "" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="2">No items</td></tr>
+      <tr><td colspan="3">No items</td></tr>
       {% endfor %}
     </tbody>
   </table>
