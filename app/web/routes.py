@@ -177,93 +177,26 @@ async def compounding_how(request: Request) -> HTMLResponse:
     )
 
 @router.get("/conversion1/context", response_class=HTMLResponse)
-async def conversion1_context_page(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Render Conversion 1 Context form and machine/partner options sourced from mixing partner records.
-    return templates.TemplateResponse(
-        "conversion1_context.html",
-        {
-            "request": request,
-            "title": "Conversion 1 Context",
-            "options": bigquery.get_mixing_partner_machine_options(),
-            "errors": [],
-            "result": None,
-            "form_data": {},
-        },
-    )
-
-
-@router.post("/conversion1/context", response_class=HTMLResponse)
-async def conversion1_context_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Parse and normalize incoming form values before validating required conversion context fields.
-    form = await request.form()
-    pellet_code = " ".join(str(form.get("pellet_code", "")).strip().split())
-    partner_code = str(form.get("partner_code", "")).strip().upper()
-    machine_code = str(form.get("machine_code", "")).strip()
-    date_yymmdd = str(form.get("date_yymmdd", "")).strip()
-    errors: list[str] = []
-    # Validate pellet code shape by requiring at least six space-separated tokens.
-    if len(pellet_code.split()) < 6:
-        errors.append("Pellet Code must contain multiple tokens (e.g. AB AC AC AD 240910 AF PR 0015).")
-    # Enforce partner code as two letters to match existing code vocabulary.
-    if len(partner_code) != 2 or not partner_code.isalpha():
-        errors.append("Partner Code must be exactly two letters.")
-    # Require machine code selection so context metadata remains complete.
-    if not machine_code:
-        errors.append("Machine is required.")
-    # Validate YYMMDD date token format before context code generation.
-    if len(date_yymmdd) != 6 or not date_yymmdd.isdigit():
-        errors.append("Date must be exactly 6 digits in YYMMDD format.")
-    result = None
-    if not errors:
-        # Persist deterministic context code row and surface generated context code for copy actions.
-        result = bigquery.create_or_get_conversion1_context(
-            pellet_code=pellet_code,
-            partner_code=partner_code,
-            machine_code=machine_code,
-            date_yymmdd=date_yymmdd,
-            user_email=request.state.user_email,
-        )
-    return templates.TemplateResponse(
-        "conversion1_context.html",
-        {
-            "request": request,
-            "title": "Conversion 1 Context",
-            "options": bigquery.get_mixing_partner_machine_options(),
-            "errors": errors,
-            "result": _to_json_safe(result) if result else None,
-            "form_data": {
-                "pellet_code": pellet_code,
-                "partner_code": partner_code,
-                "machine_code": machine_code,
-                "date_yymmdd": date_yymmdd,
-            },
-        },
-        status_code=400 if errors else 200,
-    )
-
-
-@router.get("/conversion1/how", response_class=HTMLResponse)
-async def conversion1_how_page(
+async def conversion1_context_page(
     request: Request,
     q: str | None = None,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> HTMLResponse:
-    # Clamp pagination values to keep list queries within global safety bounds.
+    # Clamp pagination arguments so table browsing remains within safe global bounds.
     safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     safe_page = max(1, page)
-    # Load conversion-code rows using optional text filtering on the generated conversion code.
+    # Load conversion-code rows for the Context page table and apply optional text filtering.
     rows, total = bigquery.list_conversion1_codes_paginated(
         search=(q or "").strip() or None,
         page=safe_page,
         page_size=safe_page_size,
     )
-    # Fetch active pellet bag IDs for dropdown + manual validation.
+    # Fetch active pellet codes for the dropdown and partner-machine options for conversion partner selection.
     pellet_codes = bigquery.list_pellet_bag_codes()
-    # Fetch partner-machine options from the same source used by Mixing Machine page.
     raw_options = bigquery.get_mixing_partner_machine_options()
-    # Build normalized option payload where each select value maps to one partner + machine combination.
+    # Normalize partner-machine rows so one select option resolves to one deterministic partner + machine pair.
     partner_machine_options = [
         {
             "key": f"{(option.get('partner_code') or '').strip()}||{(option.get('machine_code') or '').strip()}",
@@ -273,10 +206,10 @@ async def conversion1_how_page(
         }
         for option in raw_options
     ]
-    # Keep only complete options to avoid presenting invalid rows in the selector.
+    # Keep only valid complete options so the UI never renders partially configured rows.
     partner_machine_options = [row for row in partner_machine_options if row["partner_code"] and row["machine_code"]]
     return templates.TemplateResponse(
-        "conversion1_how.html",
+        "conversion1_context.html",
         {
             "request": request,
             "title": "Conversion 1",
@@ -294,24 +227,21 @@ async def conversion1_how_page(
             "form_data": {},
             "pellet_codes": pellet_codes,
             "partner_machine_options": partner_machine_options,
-            "partner_machine_labels": sorted({row["label"] for row in partner_machine_options}),
         },
     )
 
 
-@router.post("/conversion1/how", response_class=HTMLResponse)
-async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Parse and normalize Conversion 1 create-form inputs.
+@router.post("/conversion1/context", response_class=HTMLResponse)
+async def conversion1_context_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Parse and normalize Context form fields while preserving both dropdown and manual pellet entry.
     form = await request.form()
     pellet_code_select = " ".join(str(form.get("pellet_code_select", "")).strip().split())
     pellet_code_manual = " ".join(str(form.get("pellet_code_manual", "")).strip().split())
     conversion_partner_key = str(form.get("conversion_partner_key", "")).strip()
-    conversion_partner_manual = " ".join(str(form.get("conversion_partner_manual", "")).strip().split())
     production_date = str(form.get("production_date", "")).strip()
-    # Prefer manual pellet entry when present; otherwise use dropdown selection.
     pellet_code = pellet_code_manual or pellet_code_select
     errors: list[str] = []
-    # Load valid option sets once so dropdown and manual entries both validate against persisted data.
+    # Fetch reference data used by both validation and dropdown rendering.
     pellet_codes = bigquery.list_pellet_bag_codes()
     raw_options = bigquery.get_mixing_partner_machine_options()
     partner_machine_options = [
@@ -323,22 +253,19 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
         }
         for option in raw_options
     ]
-    # Keep only complete options so validation and dropdown use the same clean source.
+    # Keep only valid options and build a key map for fast lookup.
     partner_machine_options = [row for row in partner_machine_options if row["partner_code"] and row["machine_code"]]
     option_by_key = {row["key"]: row for row in partner_machine_options}
-    option_by_label = {row["label"]: row for row in partner_machine_options}
-    # Enforce pellet code presence and existence in the active pellet bag list.
+    # Validate pellet code presence and existence.
     if not pellet_code:
-        errors.append("Pellet ID is required.")
+        errors.append("Pellet Code is required.")
     elif pellet_code not in set(pellet_codes):
-        errors.append("Pellet ID was not found. Please use a valid existing pellet ID.")
-    # Resolve partner-machine either from dropdown key or manual BF-style text and ensure it exists.
+        errors.append("Pellet Code was not found. Please use a valid existing pellet code.")
+    # Validate selected partner-machine option.
     selected_option = option_by_key.get(conversion_partner_key)
-    if not selected_option and conversion_partner_manual:
-        selected_option = option_by_label.get(conversion_partner_manual)
     if not selected_option:
-        errors.append("Conversion Partner must match an existing partner-machine option.")
-    # Convert calendar date input into YYMMDD token required by persisted code format.
+        errors.append("Conversion partner must match an existing option.")
+    # Validate date and derive YYMMDD token used by the generated code.
     date_yymmdd = ""
     if not production_date:
         errors.append("Date of production is required.")
@@ -349,7 +276,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             errors.append("Date of production must be a valid calendar date.")
     result = None
     if not errors and selected_option:
-        # Ensure deterministic context exists before minting the next conversion code suffix.
+        # Ensure deterministic context exists before minting the final Conversion ID row.
         context = bigquery.create_or_get_conversion1_context(
             pellet_code=pellet_code,
             partner_code=selected_option["partner_code"],
@@ -357,7 +284,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             date_yymmdd=date_yymmdd,
             user_email=request.state.user_email,
         )
-        # Persist generated conversion code row using the same code generator as existing Conversion 1 flow.
+        # Persist generated conversion code row with Context metadata and optional How fields left blank.
         result = bigquery.create_or_update_conversion1_how(
             context_code=str(context.get("context_code") or ""),
             notes=None,
@@ -366,14 +293,14 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             processed_data_link=None,
             user_email=request.state.user_email,
         )
-    # Reload first table page after create attempt so users see newest rows and validation feedback together.
+    # Reload first page after submission so newest entry appears immediately with any validation feedback.
     rows, total = bigquery.list_conversion1_codes_paginated(
         search=None,
         page=1,
         page_size=DEFAULT_PAGE_SIZE,
     )
     return templates.TemplateResponse(
-        "conversion1_how.html",
+        "conversion1_context.html",
         {
             "request": request,
             "title": "Conversion 1",
@@ -392,12 +319,121 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
                 "pellet_code_select": pellet_code_select,
                 "pellet_code_manual": pellet_code_manual,
                 "conversion_partner_key": conversion_partner_key,
-                "conversion_partner_manual": conversion_partner_manual,
                 "production_date": production_date,
             },
             "pellet_codes": pellet_codes,
             "partner_machine_options": partner_machine_options,
-            "partner_machine_labels": sorted(option_by_label.keys()),
+        },
+        status_code=400 if errors else 200,
+    )
+
+
+@router.get("/conversion1/how", response_class=HTMLResponse)
+async def conversion1_how_page(
+    request: Request,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> HTMLResponse:
+    # Clamp pagination values so large requests cannot exceed configured server limits.
+    safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
+    safe_page = max(1, page)
+    # Load paginated How entries for the lower table panel.
+    rows, total = bigquery.list_conversion1_how(
+        context_code=None,
+        process_id=None,
+        failure_mode=None,
+        search=None,
+        page=safe_page,
+        page_size=safe_page_size,
+    )
+    # Load Context code options for dropdown selection in the form panel.
+    context_codes = bigquery.list_conversion1_context_codes()
+    return templates.TemplateResponse(
+        "conversion1_how.html",
+        {
+            "request": request,
+            "title": "Conversion 1",
+            "errors": [],
+            "result": None,
+            "rows": _to_json_safe(rows),
+            "pagination": {
+                "page": safe_page,
+                "page_size": safe_page_size,
+                "total": total,
+                "has_prev": safe_page > 1,
+                "has_next": safe_page * safe_page_size < total,
+            },
+            "form_data": {"processing_code": "AB"},
+            "context_codes": context_codes,
+            "failure_modes": FAILURE_MODES,
+        },
+    )
+
+
+@router.post("/conversion1/how", response_class=HTMLResponse)
+async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Parse and normalize form fields for Conversion How persistence.
+    form = await request.form()
+    context_code = " ".join(str(form.get("context_code", "")).strip().split())
+    processing_code = " ".join(str(form.get("processing_code", "AB")).strip().split()) or "AB"
+    failure_mode = str(form.get("failure_mode", "")).strip()
+    machine_setup_file = str(form.get("machine_setup_file", "")).strip()
+    processed_data_file = str(form.get("processed_data_file", "")).strip()
+    errors: list[str] = []
+    # Validate context code selection against active persisted context rows.
+    context_codes = bigquery.list_conversion1_context_codes()
+    if not context_code:
+        errors.append("Context code is required.")
+    elif context_code not in set(context_codes):
+        errors.append("Context code must be selected from the available list.")
+    # Validate failure mode selection when provided to keep table values standardized.
+    if failure_mode and failure_mode not in FAILURE_MODES:
+        errors.append("Failure mode must be selected from the available options.")
+    result = None
+    if not errors:
+        # Persist one Conversion 1 How row using selected context and optional link fields.
+        result = bigquery.create_or_update_conversion1_how(
+            context_code=context_code,
+            notes=f"Processing code: {processing_code}",
+            failure_mode=failure_mode or None,
+            setup_link=machine_setup_file or None,
+            processed_data_link=processed_data_file or None,
+            user_email=request.state.user_email,
+        )
+    # Reload first page after save so newly inserted row is immediately visible.
+    rows, total = bigquery.list_conversion1_how(
+        context_code=None,
+        process_id=None,
+        failure_mode=None,
+        search=None,
+        page=1,
+        page_size=DEFAULT_PAGE_SIZE,
+    )
+    return templates.TemplateResponse(
+        "conversion1_how.html",
+        {
+            "request": request,
+            "title": "Conversion 1",
+            "errors": errors,
+            "result": _to_json_safe(result) if result else None,
+            "rows": _to_json_safe(rows),
+            "pagination": {
+                "page": 1,
+                "page_size": DEFAULT_PAGE_SIZE,
+                "total": total,
+                "has_prev": False,
+                "has_next": DEFAULT_PAGE_SIZE < total,
+            },
+            "form_data": {
+                "context_code": context_code,
+                "processing_code": processing_code,
+                "failure_mode": failure_mode,
+                "machine_setup_file": machine_setup_file,
+                "processed_data_file": processed_data_file,
+            },
+            "context_codes": context_codes,
+            "failure_modes": FAILURE_MODES,
         },
         status_code=400 if errors else 200,
     )
