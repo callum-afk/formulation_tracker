@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- Conversion 1 context workflow form captures pellet code + machine partner metadata to mint a context code. -->
+<!-- Conversion 1 Context page hosts only conversion code generation UI and conversion code list table. -->
 <section class="panel">
-  <!-- Form heading clarifies the step-one workflow in the Conversion 1 process. -->
-  <h2>Generate Conversion 1 Context code</h2>
-  <!-- Display friendly validation issues collected by the backend route. -->
+  <!-- Section heading matches required label exactly. -->
+  <h2>Create conversion code</h2>
+  <!-- Validation errors from backend are surfaced inline above form controls. -->
   {% if errors %}
   <div class="form-errors">
     {% for error in errors %}
@@ -12,49 +12,91 @@
     {% endfor %}
   </div>
   {% endif %}
-  <!-- Context creation form posts back to this route and returns generated code on success. -->
+  <!-- Form creates a Conversion ID from pellet code, partner mapping, and production date. -->
   <form method="post" class="form-stack">
+    <!-- Grid row contains primary code input fields in three responsive columns. -->
     <div class="grid">
-      <!-- Pellet code text input stores the upstream pellet bag code string as entered. -->
-      <label>Pellet Code
-        <input name="pellet_code" required placeholder="AB AC AC AD 240910 AF PR 0015" value="{{ form_data.pellet_code if form_data else '' }}" />
-      </label>
-      <!-- Partner code dropdown reuses partner-machine rows from the mixing machine list source. -->
-      <label>Partner Code
-        <select name="partner_code" required>
-          <option value="">Select partner code</option>
-          {% for option in options %}
-          <option value="{{ option.partner_code }}" {% if form_data and form_data.partner_code == option.partner_code %}selected{% endif %}>{{ option.partner_code }}{% if option.partner_name %} - {{ option.partner_name }}{% endif %}</option>
+      <!-- Dropdown lets users select an existing pellet code from persisted options. -->
+      <label>Pellet Code (dropdown)
+        <select name="pellet_code_select">
+          <option value="">Select formulation</option>
+          {% for pellet_code in pellet_codes %}
+          <option value="{{ pellet_code }}" {% if form_data and form_data.pellet_code_select == pellet_code %}selected{% endif %}>{{ pellet_code }}</option>
           {% endfor %}
         </select>
       </label>
-      <!-- Machine dropdown reuses same source data and stores a machine/location identifier string. -->
-      <label>Machine
-        <select name="machine_code" required>
-          <option value="">Select machine</option>
-          {% for option in options %}
-          <option value="{{ option.machine_code }}" {% if form_data and form_data.machine_code == option.machine_code %}selected{% endif %}>{{ option.machine_code }}{% if option.partner_code %} ({{ option.partner_code }}){% endif %}</option>
+      <!-- Manual entry supports direct typing/pasting of the pellet code string. -->
+      <label>Pellet Code code (manual)
+        <input name="pellet_code_manual" placeholder="AB AB AC" value="{{ form_data.pellet_code_manual if form_data else '' }}" />
+      </label>
+      <!-- Conversion partner dropdown maps to a deterministic partner + machine pair. -->
+      <label>Conversion partner
+        <select name="conversion_partner_key" required>
+          <option value="">Select partner</option>
+          {% for option in partner_machine_options %}
+          <option value="{{ option.key }}" {% if form_data and form_data.conversion_partner_key == option.key %}selected{% endif %}>{{ option.label }}</option>
           {% endfor %}
         </select>
       </label>
-      <!-- YYMMDD date field is stored as a six-digit string exactly as required by code format. -->
-      <label>Date (YYMMDD)
-        <input name="date_yymmdd" required pattern="\d{6}" maxlength="6" placeholder="240919" value="{{ form_data.date_yymmdd if form_data else '' }}" />
+      <!-- Native calendar input captures production date from which YYMMDD is derived. -->
+      <label>Date of production
+        <input type="date" name="production_date" required value="{{ form_data.production_date if form_data else '' }}" />
+      </label>
+      <!-- YYMMDD display auto-populates from selected date and remains user-visible for verification. -->
+      <label>YYMMDD code
+        <input readonly value="{{ form_data.production_date[2:4] ~ form_data.production_date[5:7] ~ form_data.production_date[8:10] if form_data and form_data.production_date else '' }}" placeholder="240827" />
       </label>
     </div>
-    <!-- Submit button triggers deterministic context code generation and persistence. -->
-    <button type="submit">Generate Context code</button>
+    <!-- Full-width primary action creates the final Conversion ID. -->
+    <button type="submit">Generate Conversion ID</button>
   </form>
+  <!-- Success message confirms the generated conversion code in plain text. -->
+  {% if result %}
+  <p><strong>Generated conversion code:</strong> {{ result.how_code }}</p>
+  {% endif %}
 </section>
 
-<!-- Success panel displays generated context code with one-click copy affordance. -->
-{% if result %}
+<!-- Conversion code list panel mirrors screenshot structure with filter controls and pagination row. -->
 <section class="panel">
-  <h2>Generated Context code</h2>
+  <!-- Section heading matches required title exactly. -->
+  <h2>Conversion codes</h2>
+  <!-- Filter row narrows conversion-code results by free-text query input. -->
+  <form method="get" class="inline-actions">
+    <label>Filter conversion code <input name="q" value="{{ filters.q }}" placeholder="e.g. AB AC, 250112" /></label>
+    <button type="submit">Filter</button>
+  </form>
+  <!-- Conversion code table keeps required columns only for Context page. -->
+  <table>
+    <thead>
+      <tr>
+        <th>CONVERSION CODE</th>
+        <th>OWNER</th>
+        <th>CONVERSION PARTNER</th>
+        <th>DATE CREATED</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.conversion_code }}</td>
+        <td>{{ row.owner }}</td>
+        <td>{{ row.conversion_partner }}</td>
+        <td>{{ row.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No conversion codes loaded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <!-- Pagination controls provide Previous / Page X of Y / Next layout. -->
   <div class="inline-actions">
-    <input id="conversion1-context-code" readonly value="{{ result.context_code }}" />
-    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('conversion1-context-code').value)">Copy</button>
+    {% if pagination.has_prev %}
+    <a href="/conversion1/context?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}&q={{ filters.q | urlencode }}">Previous</a>
+    {% endif %}
+    <span>Page {{ pagination.page }} of {{ ((pagination.total + pagination.page_size - 1) // pagination.page_size) if pagination.total else 1 }}</span>
+    {% if pagination.has_next %}
+    <a href="/conversion1/context?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}&q={{ filters.q | urlencode }}">Next</a>
+    {% endif %}
   </div>
 </section>
-{% endif %}
 {% endblock %}

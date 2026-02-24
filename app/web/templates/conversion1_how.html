@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<!-- Conversion 1 page mirrors Mixing Machine layout while generating conversion codes from pellet IDs. -->
+<!-- Conversion 1 How page hosts only How form controls and How entries table as required. -->
 <section class="panel">
-  <!-- Create form heading aligns with requested Conversion 1 naming. -->
-  <h2>Create conversion code</h2>
-  <!-- Display server-side validation feedback for invalid or missing codes. -->
+  <!-- Section heading matches required label exactly. -->
+  <h2>How</h2>
+  <!-- Validation errors are displayed above the form when backend checks fail. -->
   {% if errors %}
   <div class="form-errors">
     {% for error in errors %}
@@ -12,104 +12,128 @@
     {% endfor %}
   </div>
   {% endif %}
-  <!-- Conversion form supports dropdown selection or manual entry for persisted code values. -->
+  <!-- How form captures context linkage, processing metadata, and optional Google sheet URLs. -->
   <form method="post" class="form-stack">
+    <!-- Top grid row follows three-column style for context and processing controls. -->
     <div class="grid">
-      <!-- Pellet code dropdown lets users choose an existing pellet ID directly. -->
-      <label>Pellet Code (dropdown)
-        <select name="pellet_code_select">
-          <option value="">Select formulation</option>
-          {% for pellet_code in pellet_codes %}
-          <option value="{{ pellet_code }}" {% if form_data and form_data.pellet_code_select == pellet_code %}selected{% endif %}>{{ pellet_code }}</option>
+      <!-- Context code dropdown references existing conversion context/location codes. -->
+      <label>Context code
+        <select name="context_code" required>
+          <option value="">Select location code</option>
+          {% for code in context_codes %}
+          <option value="{{ code }}" {% if form_data and form_data.context_code == code %}selected{% endif %}>{{ code }}</option>
           {% endfor %}
         </select>
       </label>
-      <!-- Manual pellet code field allows paste-entry while still validating existence server-side. -->
-      <label>Pellet Code code (manual)
-        <input name="pellet_code_manual" placeholder="AB AB AC" value="{{ form_data.pellet_code_manual if form_data else '' }}" list="conversion1-pellet-code-options" />
+      <!-- Processing code text input starts with AB by default and remains editable. -->
+      <label>Processing code
+        <input id="conversion1-processing-code" name="processing_code" value="{{ form_data.processing_code if form_data and form_data.processing_code else 'AB' }}" />
       </label>
-      <!-- One combined conversion partner box shows BF-format label: partner name followed by machine. -->
-      <label>Conversion partner
-        <select name="conversion_partner_key" required>
-          <option value="">Select partner</option>
-          {% for option in partner_machine_options %}
-          <option value="{{ option.key }}" {% if form_data and form_data.conversion_partner_key == option.key %}selected{% endif %}>{{ option.label }}</option>
+      <!-- Centered small action button generates the next alphabetic two-letter processing code. -->
+      <div style="display:flex;align-items:end;justify-content:center;">
+        <button type="button" id="conversion1-generate-code">Generate code</button>
+      </div>
+      <!-- Failure mode dropdown keeps values constrained to configured failure mode list. -->
+      <label>Failure mode
+        <select name="failure_mode">
+          <option value="">Select failure mode</option>
+          {% for mode in failure_modes %}
+          <option value="{{ mode }}" {% if form_data and form_data.failure_mode == mode %}selected{% endif %}>{{ mode }}</option>
           {% endfor %}
         </select>
       </label>
-      <!-- Optional manual partner-machine entry supports paste workflow with strict existence validation. -->
-      <label>Conversion partner (manual)
-        <input name="conversion_partner_manual" placeholder="Partner - Machine" value="{{ form_data.conversion_partner_manual if form_data else '' }}" list="conversion1-partner-machine-options" />
+      <!-- Machine setup Google sheet URL input stores optional setup documentation link. -->
+      <label>Google sheet link: Machine Setup File
+        <input name="machine_setup_file" placeholder="https://..." value="{{ form_data.machine_setup_file if form_data else '' }}" />
       </label>
-      <!-- Calendar date input captures production date and backend converts it to YYMMDD code token. -->
-      <label>Date of production
-        <input type="date" name="production_date" required value="{{ form_data.production_date if form_data else '' }}" />
-      </label>
-      <!-- Static placeholder matches mockup visual while date token is derived from chosen calendar date. -->
-      <label>YYMMDD code
-        <input readonly value="{{ form_data.production_date[2:4] ~ form_data.production_date[5:7] ~ form_data.production_date[8:10] if form_data and form_data.production_date else '' }}" placeholder="240827" />
+      <!-- Processed data Google sheet URL input stores optional output data link. -->
+      <label>Google sheet link: Processed Data File
+        <input name="processed_data_file" placeholder="https://..." value="{{ form_data.processed_data_file if form_data else '' }}" />
       </label>
     </div>
-    <!-- Submit button generates the next conversion code after validating provided values exist. -->
-    <button type="submit">Generate Conversion ID</button>
+    <!-- Full-width primary submit action saves the Conversion How entry. -->
+    <button type="submit">Save Conversion how</button>
   </form>
-  <!-- Hidden datalist supplies autocomplete choices for manual pellet code entry. -->
-  <datalist id="conversion1-pellet-code-options">
-    {% for pellet_code in pellet_codes %}
-    <option value="{{ pellet_code }}"></option>
-    {% endfor %}
-  </datalist>
-  <!-- Hidden datalist supplies autocomplete choices for manual partner-machine entry. -->
-  <datalist id="conversion1-partner-machine-options">
-    {% for label in partner_machine_labels %}
-    <option value="{{ label }}"></option>
-    {% endfor %}
-  </datalist>
-  <!-- Success output provides one-click copy for the generated conversion code. -->
+  <!-- Success output confirms generated Conversion 1 How code after save. -->
   {% if result %}
-  <p id="location-code-output"><strong>Generated conversion code:</strong> {{ result.how_code }}</p>
+  <p><strong>Saved Conversion 1 How code:</strong> {{ result.how_code }}</p>
   {% endif %}
 </section>
 
-<!-- Conversion code table mirrors Machine page list section with filter and pagination controls. -->
+<!-- How entries panel renders paginated rows with required table headers and URL open links. -->
 <section class="panel">
-  <h2>Conversion codes</h2>
-  <!-- Filter form narrows table rows by matching generated conversion code text. -->
-  <form method="get" class="inline-actions">
-    <label>Filter conversion code <input name="q" value="{{ filters.q }}" placeholder="e.g. AB AC, 250112" /></label>
-    <button type="submit">Filter</button>
-  </form>
+  <!-- Section heading matches required title exactly. -->
+  <h2>How entries</h2>
+  <!-- Entries table includes required and existing metadata columns. -->
   <table>
     <thead>
       <tr>
-        <th>Conversion code</th>
-        <th>Owner</th>
-        <th>Conversion partner</th>
-        <th>Date created</th>
+        <th>CONVERSION 1 HOW CODE</th>
+        <th>DATE CREATED</th>
+        <th>OWNER</th>
+        <th>FAILURE MODE</th>
+        <th>MACHINE SETUP FILE</th>
+        <th>PROCESSED DATA FILE</th>
+        <th>CONTEXT CODE</th>
+        <th>PROCESS CODE</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
       <tr>
-        <td>{{ row.conversion_code }}</td>
-        <td>{{ row.owner }}</td>
-        <td>{{ row.conversion_partner }}</td>
+        <td>{{ row.how_code }}</td>
         <td>{{ row.created_at }}</td>
+        <td>{{ row.created_by }}</td>
+        <td>{{ row.failure_mode or 'N/A' }}</td>
+        <td>
+          <div>{{ row.setup_link or '' }}</div>
+          {% if row.setup_link %}<a href="{{ row.setup_link }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}
+        </td>
+        <td>
+          <div>{{ row.processed_data_link or '' }}</div>
+          {% if row.processed_data_link %}<a href="{{ row.processed_data_link }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}
+        </td>
+        <td>{{ row.context_code }}</td>
+        <td>{{ row.process_code }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No conversion codes loaded.</td></tr>
+      <tr><td colspan="8">No how entries loaded.</td></tr>
       {% endfor %}
     </tbody>
   </table>
-  <!-- Pagination links preserve active filter query while moving through server-side pages. -->
+  <!-- Pagination row follows existing table style and wording. -->
   <div class="inline-actions">
     {% if pagination.has_prev %}
-    <a href="/conversion1/how?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}&q={{ filters.q | urlencode }}">Previous</a>
+    <a href="/conversion1/how?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}">Previous</a>
     {% endif %}
     <span>Page {{ pagination.page }} of {{ ((pagination.total + pagination.page_size - 1) // pagination.page_size) if pagination.total else 1 }}</span>
     {% if pagination.has_next %}
-    <a href="/conversion1/how?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}&q={{ filters.q | urlencode }}">Next</a>
+    <a href="/conversion1/how?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}">Next</a>
     {% endif %}
   </div>
 </section>
+
+<!-- Inline script powers the centered Generate code button for client-side processing code increments. -->
+<script>
+  // Lookup processing-code input and generate button once DOM has rendered this template block.
+  const processingInput = document.getElementById("conversion1-processing-code");
+  const generateButton = document.getElementById("conversion1-generate-code");
+  // Helper converts alphabetic code string (AA..ZZ) to numeric index for easy incrementing.
+  const codeToNumber = (code) => {
+    const normalized = (code || "AA").toUpperCase().replace(/[^A-Z]/g, "").padStart(2, "A").slice(-2);
+    return ((normalized.charCodeAt(0) - 65) * 26) + (normalized.charCodeAt(1) - 65);
+  };
+  // Helper converts numeric index back into two-letter uppercase code token.
+  const numberToCode = (value) => {
+    const bounded = ((value % 676) + 676) % 676;
+    const first = String.fromCharCode(65 + Math.floor(bounded / 26));
+    const second = String.fromCharCode(65 + (bounded % 26));
+    return `${first}${second}`;
+  };
+  // Button click increments current code by one step and writes updated value into input.
+  generateButton?.addEventListener("click", () => {
+    const nextValue = codeToNumber(processingInput?.value || "AB") + 1;
+    if (processingInput) processingInput.value = numberToCode(nextValue);
+  });
+</script>
 {% endblock %}

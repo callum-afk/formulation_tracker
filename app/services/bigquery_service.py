@@ -940,6 +940,15 @@ class BigQueryService:
         rows = self._run(query, []).result()
         return [row["location_id"] for row in rows]
 
+    def list_conversion1_context_codes(self) -> List[str]:
+        # Return active Conversion 1 Context codes for dropdown selection on the How page form.
+        query = (
+            f"SELECT DISTINCT context_code FROM `{self.dataset}.conversion1_context` "
+            "WHERE is_active = TRUE ORDER BY context_code"
+        )
+        rows = self._run(query, []).result()
+        return [row["context_code"] for row in rows]
+
     def create_or_get_conversion1_context(
         self,
         pellet_code: str,
