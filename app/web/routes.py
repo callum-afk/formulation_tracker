@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.dependencies import get_bigquery, get_settings, get_storage
+from app.constants import DEFAULT_PAGE_SIZE, FAILURE_MODES, MAX_PAGE_SIZE
 from app.services.bigquery_service import BigQueryService
 from app.services.storage_service import StorageService
 
@@ -174,6 +175,187 @@ async def compounding_how(request: Request) -> HTMLResponse:
         "compounding_how.html",
         {"request": request, "title": "How"},
     )
+
+@router.get("/conversion1/context", response_class=HTMLResponse)
+async def conversion1_context_page(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Render Conversion 1 Context form and machine/partner options sourced from mixing partner records.
+    return templates.TemplateResponse(
+        "conversion1_context.html",
+        {
+            "request": request,
+            "title": "Conversion 1 Context",
+            "options": bigquery.get_mixing_partner_machine_options(),
+            "errors": [],
+            "result": None,
+            "form_data": {},
+        },
+    )
+
+
+@router.post("/conversion1/context", response_class=HTMLResponse)
+async def conversion1_context_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Parse and normalize incoming form values before validating required conversion context fields.
+    form = await request.form()
+    pellet_code = " ".join(str(form.get("pellet_code", "")).strip().split())
+    partner_code = str(form.get("partner_code", "")).strip().upper()
+    machine_code = str(form.get("machine_code", "")).strip()
+    date_yymmdd = str(form.get("date_yymmdd", "")).strip()
+    errors: list[str] = []
+    # Validate pellet code shape by requiring at least six space-separated tokens.
+    if len(pellet_code.split()) < 6:
+        errors.append("Pellet Code must contain multiple tokens (e.g. AB AC AC AD 240910 AF PR 0015).")
+    # Enforce partner code as two letters to match existing code vocabulary.
+    if len(partner_code) != 2 or not partner_code.isalpha():
+        errors.append("Partner Code must be exactly two letters.")
+    # Require machine code selection so context metadata remains complete.
+    if not machine_code:
+        errors.append("Machine is required.")
+    # Validate YYMMDD date token format before context code generation.
+    if len(date_yymmdd) != 6 or not date_yymmdd.isdigit():
+        errors.append("Date must be exactly 6 digits in YYMMDD format.")
+    result = None
+    if not errors:
+        # Persist deterministic context code row and surface generated context code for copy actions.
+        result = bigquery.create_or_get_conversion1_context(
+            pellet_code=pellet_code,
+            partner_code=partner_code,
+            machine_code=machine_code,
+            date_yymmdd=date_yymmdd,
+            user_email=request.state.user_email,
+        )
+    return templates.TemplateResponse(
+        "conversion1_context.html",
+        {
+            "request": request,
+            "title": "Conversion 1 Context",
+            "options": bigquery.get_mixing_partner_machine_options(),
+            "errors": errors,
+            "result": _to_json_safe(result) if result else None,
+            "form_data": {
+                "pellet_code": pellet_code,
+                "partner_code": partner_code,
+                "machine_code": machine_code,
+                "date_yymmdd": date_yymmdd,
+            },
+        },
+        status_code=400 if errors else 200,
+    )
+
+
+@router.get("/conversion1/how", response_class=HTMLResponse)
+async def conversion1_how_page(
+    request: Request,
+    context_code: str | None = None,
+    process_id: str | None = None,
+    failure_mode: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> HTMLResponse:
+    # Clamp pagination values to keep list queries within global safety bounds.
+    safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
+    rows, total = bigquery.list_conversion1_how(
+        context_code=(context_code or "").strip() or None,
+        process_id=(process_id or "").strip() or None,
+        failure_mode=(failure_mode or "").strip() or None,
+        search=(search or "").strip() or None,
+        page=max(1, page),
+        page_size=safe_page_size,
+    )
+    return templates.TemplateResponse(
+        "conversion1_how.html",
+        {
+            "request": request,
+            "title": "Conversion 1 How",
+            "errors": [],
+            "result": None,
+            "rows": _to_json_safe(rows),
+            "failure_modes": FAILURE_MODES,
+            "filters": {
+                "context_code": context_code or "",
+                "process_id": process_id or "",
+                "failure_mode": failure_mode or "",
+                "search": search or "",
+            },
+            "pagination": {
+                "page": max(1, page),
+                "page_size": safe_page_size,
+                "total": total,
+                "has_prev": page > 1,
+                "has_next": page * safe_page_size < total,
+            },
+            "form_data": {},
+        },
+    )
+
+
+@router.post("/conversion1/how", response_class=HTMLResponse)
+async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Parse and normalize conversion-how form fields for validation and persistence.
+    form = await request.form()
+    context_code = " ".join(str(form.get("context_code", "")).strip().split())
+    notes = str(form.get("notes", "")).strip() or None
+    failure_mode = str(form.get("failure_mode", "")).strip() or None
+    setup_link = str(form.get("setup_link", "")).strip() or None
+    processed_data_link = str(form.get("processed_data_link", "")).strip() or None
+    errors: list[str] = []
+    # Require context code input to generate deterministic conversion-how identifiers.
+    if not context_code:
+        errors.append("Context Code is required.")
+    # Require that provided context code exists before minting a process code.
+    if context_code and not bigquery.get_conversion1_context(context_code):
+        errors.append("Context Code was not found. Please generate it on Conversion 1 Context first.")
+    # Validate selected failure mode against approved controlled vocabulary.
+    if failure_mode and failure_mode not in FAILURE_MODES:
+        errors.append("Invalid failure mode.")
+    result = None
+    if not errors:
+        # Persist conversion-how row and return generated How code + process metadata.
+        result = bigquery.create_or_update_conversion1_how(
+            context_code=context_code,
+            notes=notes,
+            failure_mode=failure_mode,
+            setup_link=setup_link,
+            processed_data_link=processed_data_link,
+            user_email=request.state.user_email,
+        )
+    rows, total = bigquery.list_conversion1_how(
+        context_code=None,
+        process_id=None,
+        failure_mode=None,
+        search=None,
+        page=1,
+        page_size=DEFAULT_PAGE_SIZE,
+    )
+    return templates.TemplateResponse(
+        "conversion1_how.html",
+        {
+            "request": request,
+            "title": "Conversion 1 How",
+            "errors": errors,
+            "result": _to_json_safe(result) if result else None,
+            "rows": _to_json_safe(rows),
+            "failure_modes": FAILURE_MODES,
+            "filters": {"context_code": "", "process_id": "", "failure_mode": "", "search": ""},
+            "pagination": {
+                "page": 1,
+                "page_size": DEFAULT_PAGE_SIZE,
+                "total": total,
+                "has_prev": False,
+                "has_next": DEFAULT_PAGE_SIZE < total,
+            },
+            "form_data": {
+                "context_code": context_code,
+                "notes": notes or "",
+                "failure_mode": failure_mode or "",
+                "setup_link": setup_link or "",
+                "processed_data_link": processed_data_link or "",
+            },
+        },
+        status_code=400 if errors else 200,
+    )
+
 
 @router.get("/pellet-bags/status/{status_column}", response_class=HTMLResponse)
 async def pellet_bag_status_list(status_column: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:

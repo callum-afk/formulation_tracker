@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Conversion 1 context workflow form captures pellet code + machine partner metadata to mint a context code. -->
+<section class="panel">
+  <!-- Form heading clarifies the step-one workflow in the Conversion 1 process. -->
+  <h2>Generate Conversion 1 Context code</h2>
+  <!-- Display friendly validation issues collected by the backend route. -->
+  {% if errors %}
+  <div class="form-errors">
+    {% for error in errors %}
+    <p>{{ error }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <!-- Context creation form posts back to this route and returns generated code on success. -->
+  <form method="post" class="form-stack">
+    <div class="grid">
+      <!-- Pellet code text input stores the upstream pellet bag code string as entered. -->
+      <label>Pellet Code
+        <input name="pellet_code" required placeholder="AB AC AC AD 240910 AF PR 0015" value="{{ form_data.pellet_code if form_data else '' }}" />
+      </label>
+      <!-- Partner code dropdown reuses partner-machine rows from the mixing machine list source. -->
+      <label>Partner Code
+        <select name="partner_code" required>
+          <option value="">Select partner code</option>
+          {% for option in options %}
+          <option value="{{ option.partner_code }}" {% if form_data and form_data.partner_code == option.partner_code %}selected{% endif %}>{{ option.partner_code }}{% if option.partner_name %} - {{ option.partner_name }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <!-- Machine dropdown reuses same source data and stores a machine/location identifier string. -->
+      <label>Machine
+        <select name="machine_code" required>
+          <option value="">Select machine</option>
+          {% for option in options %}
+          <option value="{{ option.machine_code }}" {% if form_data and form_data.machine_code == option.machine_code %}selected{% endif %}>{{ option.machine_code }}{% if option.partner_code %} ({{ option.partner_code }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <!-- YYMMDD date field is stored as a six-digit string exactly as required by code format. -->
+      <label>Date (YYMMDD)
+        <input name="date_yymmdd" required pattern="\d{6}" maxlength="6" placeholder="240919" value="{{ form_data.date_yymmdd if form_data else '' }}" />
+      </label>
+    </div>
+    <!-- Submit button triggers deterministic context code generation and persistence. -->
+    <button type="submit">Generate Context code</button>
+  </form>
+</section>
+
+<!-- Success panel displays generated context code with one-click copy affordance. -->
+{% if result %}
+<section class="panel">
+  <h2>Generated Context code</h2>
+  <div class="inline-actions">
+    <input id="conversion1-context-code" readonly value="{{ result.context_code }}" />
+    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('conversion1-context-code').value)">Copy</button>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
