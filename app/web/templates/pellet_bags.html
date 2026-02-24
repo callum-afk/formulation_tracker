@@ -5,8 +5,14 @@
   <h2>Create pellet bags</h2>
   <form id="pellet-bag-create-form" class="form-stack">
     <div class="grid">
+      <!-- Compounding code is constrained to known processing codes to prevent invalid free-text input. -->
       <label>Compounding how code
-        <input name="compounding_how_code" required />
+        <select name="compounding_how_code" id="pellet-compounding-how-code" required>
+          <option value="">Select compounding how code</option>
+          {% for code in compounding_how_codes %}
+          <option value="{{ code }}">{{ code }}</option>
+          {% endfor %}
+        </select>
       </label>
       <label>Product type
         <select name="product_type" id="pellet-product-type" required>

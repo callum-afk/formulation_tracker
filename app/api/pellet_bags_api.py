@@ -123,6 +123,10 @@ def create_pellet_bags(
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
+    # Reject unknown compounding codes so pellet bags can only reference existing processing entries.
+    if payload.compounding_how_code not in bigquery.list_compounding_how_codes():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid compounding_how_code")
+
     # Validate and normalize optional fields before persisting.
     validated_optional = _validate_optional_payload(payload.dict())
     items = bigquery.create_pellet_bags(
