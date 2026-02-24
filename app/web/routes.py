@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -11,6 +12,23 @@ from app.services.storage_service import StorageService
 router = APIRouter()
 
 templates = Jinja2Templates(directory="app/web/templates")
+
+
+def _to_json_safe(value):
+    # Recursively convert nested values (including datetimes) into JSON-safe primitives for Jinja tojson.
+    if isinstance(value, datetime):
+        return value.isoformat()
+    # Convert plain dates too so all temporal values serialize consistently in detail payloads.
+    if isinstance(value, date):
+        return value.isoformat()
+    # Handle dictionaries by converting both keys and values recursively.
+    if isinstance(value, dict):
+        return {str(key): _to_json_safe(inner) for key, inner in value.items()}
+    # Handle lists/tuples recursively while preserving ordering.
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe(item) for item in value]
+    # Pass through already JSON-safe primitives as-is.
+    return value
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -35,7 +53,7 @@ async def dashboard(request: Request, bigquery: BigQueryService = Depends(get_bi
     # Render the dashboard at root so Cloud Run domain root lands on operational status panels.
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "title": "Dashboard", "status_sections": status_sections},
+        {"request": request, "title": "Dashboard", "status_sections": status_sections, "dashboard_stats": bigquery.get_dashboard_stats()},
     )
 
 
@@ -161,11 +179,11 @@ async def pellet_bag_status_list(status_column: str, request: Request, bigquery:
 
 
 @router.get("/pellet_bags", response_class=HTMLResponse)
-async def pellet_bags(request: Request) -> HTMLResponse:
+async def pellet_bags(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Serve pellet bag code minting and management workflow page.
     return templates.TemplateResponse(
         "pellet_bags.html",
-        {"request": request, "title": "Pellet Bags"},
+        {"request": request, "title": "Pellet Bags", "compounding_how_codes": bigquery.list_compounding_how_codes()},
     )
 
 
@@ -200,7 +218,7 @@ async def pellet_bag_detail(pellet_bag_code: str, request: Request, bigquery: Bi
         raise HTTPException(status_code=404, detail="Pellet bag not found")
     return templates.TemplateResponse(
         "pellet_bag_detail.html",
-        {"request": request, "title": f"Pellet bag {pellet_bag_code}", "detail": detail},
+        {"request": request, "title": f"Pellet bag {pellet_bag_code}", "detail": _to_json_safe(detail)},
     )
 
 

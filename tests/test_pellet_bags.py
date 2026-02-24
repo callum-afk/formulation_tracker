@@ -113,6 +113,50 @@ class PelletBagTests(unittest.TestCase):
 
         self.assertEqual(detail["formulations"], [{"set_code": "AB"}])
 
+    def test_list_compounding_how_codes_returns_only_codes(self) -> None:
+        # Ensure compounding dropdown metadata uses processing codes only and keeps ordering from query results.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+
+        class _FakeResult:
+            def result(self):
+                return [{"processing_code": "ZZ"}, {"processing_code": "AA"}]
+
+        service._run = MagicMock(return_value=_FakeResult())
+
+        codes = service.list_compounding_how_codes()
+
+        self.assertEqual(codes, ["ZZ", "AA"])
+
+    def test_get_sku_summary_matches_pellet_bags_from_formulation_skus(self) -> None:
+        # Ensure pellet bag lookup query uses formulation sku_list matching instead of tokenized location-code matching.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+        service.get_ingredient = MagicMock(return_value={"sku": "ABC_001_25KG"})
+
+        captured_queries = []
+
+        class _FakeResult:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def result(self):
+                return self._rows
+
+        def fake_run(query, params):
+            captured_queries.append(query)
+            if "FROM `test-project.test_dataset.v_formulations_flat`" in query and "SELECT set_code" in query:
+                return _FakeResult([])
+            return _FakeResult([])
+
+        service._run = fake_run
+
+        service.get_sku_summary("ABC_001_25KG")
+
+        self.assertTrue(any("UNNEST(f.sku_list)" in query for query in captured_queries))
+
 
 if __name__ == "__main__":
     unittest.main()

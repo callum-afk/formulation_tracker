@@ -4,9 +4,25 @@
   <h2>Ingredient summary</h2>
   <table>
     <tbody>
-      {% for key, value in summary.ingredient.items() %}
-      <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
-      {% endfor %}
+      <!-- Keep key operational fields and hide low-value metadata columns for easier reading. -->
+      <tr><th>sku</th><td>{{ summary.ingredient.sku }}</td></tr>
+      <tr><th>trade_name_inci</th><td>{{ summary.ingredient.trade_name_inci or "" }}</td></tr>
+      <tr><th>supplier</th><td>{{ summary.ingredient.supplier or "" }}</td></tr>
+      <tr><th>spec_grade</th><td>{{ summary.ingredient.spec_grade or "" }}</td></tr>
+      <tr><th>format</th><td>{{ summary.ingredient.format or "" }}</td></tr>
+      <tr><th>pack_size_value</th><td>{{ summary.ingredient.pack_size_value or "" }}</td></tr>
+      <tr><th>pack_size_unit</th><td>{{ summary.ingredient.pack_size_unit or "" }}</td></tr>
+      <!-- Replace storage metadata fields with a single actionable MSDS download link. -->
+      <tr>
+        <th>MSDS</th>
+        <td>
+          {% if summary.ingredient.msds_object_path %}
+          <a href="/ingredients/{{ sku }}/msds">Download MSDS</a>
+          {% else %}
+          No MSDS uploaded
+          {% endif %}
+        </td>
+      </tr>
     </tbody>
   </table>
 </section>

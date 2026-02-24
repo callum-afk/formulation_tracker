@@ -757,3 +757,69 @@ code {
   padding-top: var(--space-3);
   color: var(--color-ink-500);
 }
+
+
+/* Dashboard wrapper is intentionally not a card so the first redundant panel is removed. */
+.dashboard-page-panel {
+  margin-bottom: 0;
+}
+
+/* Keep dashboard page title aligned with panel heading rhythm even without an outer card. */
+.dashboard-page-panel > h2 {
+  margin: 0 0 var(--space-4);
+}
+
+/* Keep spacing between stacked dashboard sections without relying on generic panel bottom margin. */
+.dashboard-status-section-panel {
+  margin-bottom: var(--space-6);
+}
+
+/* Trim space only after the final dashboard status section to avoid excess trailing whitespace. */
+.dashboard-page-panel > .dashboard-status-section-panel:last-child {
+  margin-bottom: 0;
+}
+
+/* Prevent nested status cards from adding extra panel margin inside grid rows. */
+.dashboard-status-card-panel {
+  margin-bottom: 0;
+}
+
+/* Stats cards align as responsive columns above status panels. */
+.dashboard-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+/* Individual stat cards mirror panel styling but with tighter spacing for compact KPIs. */
+.dashboard-stat-card {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, white 70%, var(--color-paper-100));
+}
+
+/* Stat headings use smaller uppercase rhythm for clear key/value hierarchy. */
+.dashboard-stat-card h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-500);
+}
+
+/* Stat values are prominent and readable from a glance. */
+.dashboard-stat-card p {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  color: var(--color-ink-900);
+}
+
+/* Fact card text can wrap and uses body size for sentence-style helper copy. */
+.dashboard-stat-card:last-child p {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--color-ink-700);
+}

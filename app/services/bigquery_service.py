@@ -992,6 +992,15 @@ class BigQueryService:
         rows = self._run(query, []).result()
         return [dict(row) for row in rows]
 
+    def list_compounding_how_codes(self) -> List[str]:
+        # Return only active processing codes so forms can enforce valid compounding references.
+        query = (
+            f"SELECT processing_code FROM `{self.dataset}.compounding_how` "
+            "WHERE is_active = TRUE ORDER BY processing_code DESC"
+        )
+        rows = self._run(query, []).result()
+        return [str(row["processing_code"]) for row in rows if row.get("processing_code")]
+
     def update_compounding_how(
         self,
         processing_code: str,
@@ -1170,8 +1179,12 @@ class BigQueryService:
             f"SELECT DISTINCT p.pellet_bag_id, p.pellet_bag_code, p.compounding_how_code, p.updated_at, p.created_at "
             f"FROM `{self.dataset}.pellet_bags` p "
             f"JOIN `{self.dataset}.compounding_how` c ON c.processing_code = p.compounding_how_code "
-            "LEFT JOIN UNNEST(SPLIT(c.location_code, '_')) token "
-            "WHERE p.is_active = TRUE AND LOWER(token) = LOWER(@sku) "
+            f"JOIN `{self.dataset}.v_formulations_flat` f "
+            "ON f.set_code = SPLIT(c.location_code, ' ')[SAFE_OFFSET(0)] "
+            "AND f.weight_code = SPLIT(c.location_code, ' ')[SAFE_OFFSET(1)] "
+            "AND f.batch_variant_code = SPLIT(c.location_code, ' ')[SAFE_OFFSET(2)] "
+            "WHERE p.is_active = TRUE "
+            "AND EXISTS (SELECT 1 FROM UNNEST(f.sku_list) AS listed_sku WHERE LOWER(listed_sku) = LOWER(@sku)) "
             "ORDER BY updated_at DESC, created_at DESC"
         )
         pellet_bags = [
@@ -1267,6 +1280,25 @@ class BigQueryService:
             f"FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE ORDER BY created_at DESC, sequence_number DESC"
         )
         return [dict(row) for row in self._run(query, []).result()]
+
+
+    def get_dashboard_stats(self) -> Dict[str, Any]:
+        # Fetch dashboard KPI values in one query so all cards reflect a consistent snapshot.
+        query = (
+            "SELECT "
+            f"(SELECT COUNT(1) FROM `{self.dataset}.ingredients` WHERE is_active = TRUE) AS sku_count, "
+            f"(SELECT COUNT(1) FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE) AS active_pellet_bags, "
+            f"(SELECT COALESCE(SUM(bag_mass_kg), 0) FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE) AS total_pellets_produced_kg"
+        )
+        rows = list(self._run(query, []).result())
+        if not rows:
+            return {"sku_count": 0, "active_pellet_bags": 0, "total_pellets_produced_kg": 0.0}
+        row = dict(rows[0])
+        return {
+            "sku_count": int(row.get("sku_count") or 0),
+            "active_pellet_bags": int(row.get("active_pellet_bags") or 0),
+            "total_pellets_produced_kg": float(row.get("total_pellets_produced_kg") or 0),
+        }
 
     def update_pellet_bag(self, pellet_bag_id: str, updated_by: Optional[str], optional_fields: Dict[str, Any]) -> bool:
         # Update only editable optional fields while preserving immutable identifiers and creation metadata.

@@ -1,13 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
+<!-- Dashboard container holds KPI cards and status sections in one flow. -->
+<section class="dashboard-page-panel">
   <h2>Dashboard</h2>
+
+  <!-- Stats row gives at-a-glance production numbers and lightweight activity facts. -->
+  <section class="dashboard-stats-grid" aria-label="Dashboard stats">
+    <article class="dashboard-stat-card">
+      <h3>Number of SKU’s</h3>
+      <p>{{ dashboard_stats.sku_count }}</p>
+    </article>
+    <article class="dashboard-stat-card">
+      <h3>Total Pellets Produced (kg)</h3>
+      <p>{{ "%.2f"|format(dashboard_stats.total_pellets_produced_kg) }}</p>
+    </article>
+    <article class="dashboard-stat-card">
+      <h3>Active Pellet Bags</h3>
+      <p>{{ dashboard_stats.active_pellet_bags }}</p>
+    </article>
+    <article class="dashboard-stat-card">
+      <h3>Page facts</h3>
+      <p>Views and clicks telemetry can be added when analytics tracking is enabled.</p>
+    </article>
+  </section>
+
+  <!-- Status sections remain stacked and now use H2 titles as requested. -->
   {% for section in status_sections %}
-  <section class="panel">
-    <h3>{{ section["title"] }}</h3>
-    <div class="grid">
+  <section class="panel dashboard-status-section-panel">
+    <h2>{{ section["title"] }}</h2>
+    <div class="grid dashboard-status-grid">
       {% for status_table in section["items"] %}
-      <div class="panel">
+      <div class="panel dashboard-status-card-panel">
         <h4>{{ status_table["title"] }}</h4>
         <table>
           <thead><tr><th>Pellet bag code</th><th>Status</th><th>Assigned</th></tr></thead>
