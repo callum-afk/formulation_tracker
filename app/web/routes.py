@@ -15,19 +15,26 @@ templates = Jinja2Templates(directory="app/web/templates")
 
 
 def _to_json_safe(value):
-    # Recursively convert nested values (including datetimes) into JSON-safe primitives for Jinja tojson.
+    # Recursively convert nested values (including datetimes/dates/Decimals) into JSON-safe primitives for Jinja tojson.
     if isinstance(value, datetime):
         return value.isoformat()
-    # Convert plain dates too so all temporal values serialize consistently in detail payloads.
     if isinstance(value, date):
         return value.isoformat()
-    # Handle dictionaries by converting both keys and values recursively.
+    # BigQuery NUMERIC/BIGNUMERIC often comes back as Decimal
+    try:
+        from decimal import Decimal
+        if isinstance(value, Decimal):
+            # Use float for easy JS use; switch to str(value) if you need exact precision.
+            return float(value)
+    except Exception:
+        pass
+    # Convert bytes (rare) to text
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace")
     if isinstance(value, dict):
         return {str(key): _to_json_safe(inner) for key, inner in value.items()}
-    # Handle lists/tuples recursively while preserving ordering.
     if isinstance(value, (list, tuple)):
         return [_to_json_safe(item) for item in value]
-    # Pass through already JSON-safe primitives as-is.
     return value
 
 
