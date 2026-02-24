@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Conversion 1 how workflow mints process codes from existing context codes and stores process metadata. -->
+<section class="panel">
+  <h2>Generate Conversion 1 How code</h2>
+  <!-- Display friendly validation messages when submit payload is incomplete or invalid. -->
+  {% if errors %}
+  <div class="form-errors">
+    {% for error in errors %}
+    <p>{{ error }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <!-- How creation form accepts context code plus optional processing metadata fields. -->
+  <form method="post" class="form-stack">
+    <div class="grid">
+      <!-- Context code input should receive a value generated from the Conversion 1 Context page. -->
+      <label>Context Code
+        <input name="context_code" required value="{{ form_data.context_code if form_data else '' }}" />
+      </label>
+      <!-- Failure mode dropdown shares the same controlled vocabulary as pellet bag workflows. -->
+      <label>Failure Mode
+        <select name="failure_mode">
+          <option value="">Select failure mode</option>
+          {% for mode in failure_modes %}
+          <option value="{{ mode }}" {% if form_data and form_data.failure_mode == mode %}selected{% endif %}>{{ mode }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <!-- Setup link stores a Google Drive URL and is rendered as a clickable link in the table below. -->
+      <label>Setup link
+        <input name="setup_link" type="url" placeholder="https://..." value="{{ form_data.setup_link if form_data else '' }}" />
+      </label>
+      <!-- Processed data link stores a Google Drive URL and is rendered as a clickable link in the table below. -->
+      <label>Processed data link
+        <input name="processed_data_link" type="url" placeholder="https://..." value="{{ form_data.processed_data_link if form_data else '' }}" />
+      </label>
+      <!-- Optional notes field captures additional operator metadata for each processing run. -->
+      <label>Notes
+        <textarea name="notes" rows="3">{{ form_data.notes if form_data else '' }}</textarea>
+      </label>
+    </div>
+    <!-- Submit button mints the next AB-style process code and stores a conversion-how row. -->
+    <button type="submit">Generate How code</button>
+  </form>
+</section>
+
+<!-- Success panel surfaces generated immutable code identifiers after a save. -->
+{% if result %}
+<section class="panel">
+  <h2>Generated How code</h2>
+  <div class="inline-actions">
+    <input id="conversion1-how-code" readonly value="{{ result.how_code }}" />
+    <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('conversion1-how-code').value)">Copy</button>
+  </div>
+  <p><strong>Process ID:</strong> {{ result.process_id }}</p>
+</section>
+{% endif %}
+
+<!-- Search and filter form narrows conversion-how table results with server-side pagination. -->
+<section class="panel">
+  <h2>How entries</h2>
+  <form method="get" class="grid">
+    <label>Location ID / Context Code
+      <input name="context_code" value="{{ filters.context_code }}" />
+    </label>
+    <label>Process ID
+      <input name="process_id" value="{{ filters.process_id }}" />
+    </label>
+    <label>Failure Mode
+      <select name="failure_mode">
+        <option value="">All</option>
+        {% for mode in failure_modes %}
+        <option value="{{ mode }}" {% if filters.failure_mode == mode %}selected{% endif %}>{{ mode }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Search
+      <input name="search" value="{{ filters.search }}" placeholder="How code or notes" />
+    </label>
+    <button type="submit">Apply filters</button>
+  </form>
+
+  <!-- Result table renders stored rows and URL fields as clickable outbound links. -->
+  <table>
+    <thead><tr><th>How code</th><th>Context code</th><th>Process ID</th><th>Failure mode</th><th>Setup</th><th>Processed data</th><th>Created</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.how_code }}</td>
+        <td>{{ row.context_code }}</td>
+        <td>{{ row.process_id }}</td>
+        <td>{{ row.failure_mode or '' }}</td>
+        <td>{% if row.setup_link %}<a href="{{ row.setup_link }}" target="_blank" rel="noopener">Open</a>{% endif %}</td>
+        <td>{% if row.processed_data_link %}<a href="{{ row.processed_data_link }}" target="_blank" rel="noopener">Open</a>{% endif %}</td>
+        <td>{{ row.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No entries found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Simple previous/next controls preserve active filters through query parameters. -->
+  <div class="inline-actions">
+    {% if pagination.has_prev %}
+    <a href="/conversion1/how?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}&context_code={{ filters.context_code | urlencode }}&process_id={{ filters.process_id | urlencode }}&failure_mode={{ filters.failure_mode | urlencode }}&search={{ filters.search | urlencode }}">Previous</a>
+    {% endif %}
+    <span>Page {{ pagination.page }} · Total {{ pagination.total }}</span>
+    {% if pagination.has_next %}
+    <a href="/conversion1/how?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}&context_code={{ filters.context_code | urlencode }}&process_id={{ filters.process_id | urlencode }}&failure_mode={{ filters.failure_mode | urlencode }}&search={{ filters.search | urlencode }}">Next</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

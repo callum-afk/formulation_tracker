@@ -4,27 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, CompoundingHowCreate, CompoundingHowUpdate
+from app.constants import FAILURE_MODES
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import code_to_int, int_to_code
 
 router = APIRouter(prefix="/api/compounding_how", tags=["compounding_how"])
 
-# Failure mode options copied exactly from the provided screenshot list.
-FAILURE_MODES = [
-    "N/A",
-    "Under-Plasticized",
-    "Over-Plasticized",
-    "Brittle Filament",
-    "Powder Feed Block",
-    "Liquid Feed Block",
-    "Torque Limit",
-    "Pressure Limit",
-    "Barrel Blockage",
-    "Unknown",
-    "Sticky Film (direct to film)",
-    "Brittle Film (direct to film)",
-    "Heterogeneity",
-]
+
 
 
 @router.get("/meta", response_model=ApiResponse)

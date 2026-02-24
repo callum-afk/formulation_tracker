@@ -11,6 +11,8 @@ from uuid import uuid4
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
+from app.services.codegen_service import int_to_code
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +112,8 @@ class BigQueryService:
             "code_counters": {"counter_name", "scope", "next_value", "updated_at"},
             "pellet_bags": {"pellet_bag_id", "pellet_bag_code", "pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "bag_mass_kg", "remaining_mass_kg", "short_moisture_percent", "purpose", "reference_sample_taken", "qc_status", "long_moisture_status", "density_status", "injection_moulding_status", "film_forming_status", "injection_moulding_assignee_email", "film_forming_assignee_email", "notes", "customer", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "pellet_bag_assignees": {"email", "is_active", "created_at", "created_by"},
+            "conversion1_context": {"context_code", "pellet_bag_code", "partner_code", "machine_code", "date_yymmdd", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
+            "conversion1_how": {"how_code", "context_code", "process_code", "process_id", "notes", "failure_mode", "setup_link", "processed_data_link", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
         }
 
         # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
@@ -811,6 +815,15 @@ class BigQueryService:
         rows = self._run(query, []).result()
         return [dict(row) for row in rows]
 
+    def get_mixing_partner_machine_options(self) -> List[Dict[str, Any]]:
+        # Reuse existing location-partner records as machine+partner options for conversion workflows.
+        query = (
+            f"SELECT partner_code, partner_name, machine_specification AS machine_code "
+            f"FROM `{self.dataset}.location_partners` ORDER BY partner_code"
+        )
+        rows = self._run(query, []).result()
+        return [dict(row) for row in rows]
+
     def get_location_partner(self, partner_code: str) -> Optional[Dict[str, Any]]:
         # Fetch a single custom location partner row by its two-letter partner code.
         query = (
@@ -926,6 +939,136 @@ class BigQueryService:
         query = f"SELECT DISTINCT location_id FROM `{self.dataset}.location_codes` ORDER BY location_id"
         rows = self._run(query, []).result()
         return [row["location_id"] for row in rows]
+
+    def create_or_get_conversion1_context(
+        self,
+        pellet_code: str,
+        partner_code: str,
+        machine_code: str,
+        date_yymmdd: str,
+        user_email: Optional[str],
+    ) -> Dict[str, Any]:
+        # Build deterministic context code from pellet code + partner code + YYMMDD token.
+        context_code = f"{pellet_code} {partner_code} {date_yymmdd}".strip()
+        # Return existing active row when the same deterministic code has already been persisted.
+        existing = self.get_conversion1_context(context_code)
+        if existing:
+            return existing
+        # Insert a new conversion context row for first-time deterministic code creation.
+        query = (
+            f"INSERT `{self.dataset}.conversion1_context` "
+            "(context_code, pellet_bag_code, partner_code, machine_code, date_yymmdd, created_at, created_by, updated_at, updated_by, is_active) "
+            "VALUES (@context_code, @pellet_bag_code, @partner_code, @machine_code, @date_yymmdd, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @updated_by, TRUE)"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("context_code", "STRING", context_code),
+                bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_code),
+                bigquery.ScalarQueryParameter("partner_code", "STRING", partner_code),
+                bigquery.ScalarQueryParameter("machine_code", "STRING", machine_code),
+                bigquery.ScalarQueryParameter("date_yymmdd", "STRING", date_yymmdd),
+                bigquery.ScalarQueryParameter("created_by", "STRING", user_email),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", user_email),
+            ],
+        ).result()
+        return self.get_conversion1_context(context_code) or {"context_code": context_code}
+
+    def get_conversion1_context(self, context_code: str) -> Optional[Dict[str, Any]]:
+        # Retrieve one active conversion context row to support conversion-how form validation.
+        query = (
+            f"SELECT context_code, pellet_bag_code, partner_code, machine_code, date_yymmdd, created_at, created_by, updated_at, updated_by "
+            f"FROM `{self.dataset}.conversion1_context` WHERE context_code = @context_code AND is_active = TRUE LIMIT 1"
+        )
+        rows = list(self._run(query, [bigquery.ScalarQueryParameter("context_code", "STRING", context_code)]).result())
+        return dict(rows[0]) if rows else None
+
+    def create_or_update_conversion1_how(
+        self,
+        context_code: str,
+        notes: Optional[str],
+        failure_mode: Optional[str],
+        setup_link: Optional[str],
+        processed_data_link: Optional[str],
+        user_email: Optional[str],
+    ) -> Dict[str, Any]:
+        # Mint the next AB-style process code from a dedicated conversion counter.
+        process_code_value = self.allocate_counter("conversion1_process_code", "", start_value=1)
+        process_code = int_to_code(process_code_value)
+        # Compute how/process identifiers from deterministic context code + generated process code.
+        how_code = f"{context_code} {process_code}".strip()
+        process_id = how_code
+        # Persist one immutable conversion-how record with optional links and metadata.
+        query = (
+            f"INSERT `{self.dataset}.conversion1_how` "
+            "(how_code, context_code, process_code, process_id, notes, failure_mode, setup_link, processed_data_link, created_at, created_by, updated_at, updated_by, is_active) "
+            "VALUES (@how_code, @context_code, @process_code, @process_id, @notes, @failure_mode, @setup_link, @processed_data_link, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @updated_by, TRUE)"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("how_code", "STRING", how_code),
+                bigquery.ScalarQueryParameter("context_code", "STRING", context_code),
+                bigquery.ScalarQueryParameter("process_code", "STRING", process_code),
+                bigquery.ScalarQueryParameter("process_id", "STRING", process_id),
+                bigquery.ScalarQueryParameter("notes", "STRING", notes),
+                bigquery.ScalarQueryParameter("failure_mode", "STRING", failure_mode),
+                bigquery.ScalarQueryParameter("setup_link", "STRING", setup_link),
+                bigquery.ScalarQueryParameter("processed_data_link", "STRING", processed_data_link),
+                bigquery.ScalarQueryParameter("created_by", "STRING", user_email),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", user_email),
+            ],
+        ).result()
+        return {
+            "how_code": how_code,
+            "context_code": context_code,
+            "process_code": process_code,
+            "process_id": process_id,
+            "notes": notes,
+            "failure_mode": failure_mode,
+            "setup_link": setup_link,
+            "processed_data_link": processed_data_link,
+        }
+
+    def list_conversion1_how(
+        self,
+        context_code: Optional[str],
+        process_id: Optional[str],
+        failure_mode: Optional[str],
+        search: Optional[str],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        # Build dynamic predicates for conversion-how filtering while keeping typed parameters safe.
+        where: List[str] = ["is_active = TRUE"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        if context_code:
+            where.append("context_code = @context_code")
+            params.append(bigquery.ScalarQueryParameter("context_code", "STRING", context_code))
+        if process_id:
+            where.append("process_id = @process_id")
+            params.append(bigquery.ScalarQueryParameter("process_id", "STRING", process_id))
+        if failure_mode:
+            where.append("failure_mode = @failure_mode")
+            params.append(bigquery.ScalarQueryParameter("failure_mode", "STRING", failure_mode))
+        if search:
+            where.append("(CONTAINS_SUBSTR(how_code, @search) OR CONTAINS_SUBSTR(notes, @search))")
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", search))
+        where_clause = "WHERE " + " AND ".join(where)
+        # Query total rows separately so UI pagination controls can render correctly.
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.conversion1_how` {where_clause}"
+        total_rows = list(self._run(count_query, params).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+        # Return one ordered page of conversion-how records with stable tie-breaker sorting.
+        query = (
+            f"SELECT how_code, context_code, process_code, process_id, notes, failure_mode, setup_link, processed_data_link, created_at, created_by, updated_at, updated_by "
+            f"FROM `{self.dataset}.conversion1_how` {where_clause} "
+            "ORDER BY created_at DESC, how_code DESC LIMIT @limit OFFSET @offset"
+        )
+        offset = max(page - 1, 0) * page_size
+        data_params = [*params, bigquery.ScalarQueryParameter("limit", "INT64", page_size), bigquery.ScalarQueryParameter("offset", "INT64", offset)]
+        rows = self._run(query, data_params).result()
+        return [dict(row) for row in rows], total
 
     def create_compounding_how(
         self,

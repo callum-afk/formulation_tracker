@@ -823,3 +823,13 @@ code {
   font-size: 0.95rem;
   color: var(--color-ink-700);
 }
+
+/* Validation error box style for server-rendered form errors on conversion workflows. */
+.form-errors {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #fff2f2 70%, var(--color-paper-100));
+  color: var(--color-danger);
+}
