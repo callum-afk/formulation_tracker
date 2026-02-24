@@ -9,7 +9,7 @@
       <table>
         <thead><tr><th>Pellet bag code</th><th>Status</th></tr></thead>
         <tbody>
-          {% for item in  %}
+          {% for item in section["items"] %}
           <tr>
             <td><a href="/pellet-bags/{{ item.pellet_bag_code }}">{{ item.pellet_bag_code }}</a></td>
             <td>{{ item.status_value }}</td>
