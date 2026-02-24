@@ -1070,6 +1070,43 @@ class BigQueryService:
         rows = self._run(query, data_params).result()
         return [dict(row) for row in rows], total
 
+    def list_conversion1_codes_paginated(
+        self,
+        search: Optional[str],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        # Build reusable predicates for conversion-code table filtering while preserving type-safe parameters.
+        where: List[str] = ["h.is_active = TRUE"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        if search:
+            where.append("CONTAINS_SUBSTR(h.how_code, @search)")
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", search))
+        where_clause = "WHERE " + " AND ".join(where)
+        # Count rows separately so pagination controls can report accurate total pages.
+        count_query = (
+            "SELECT COUNT(1) AS total "
+            f"FROM `{self.dataset}.conversion1_how` h "
+            f"{where_clause}"
+        )
+        total_rows = list(self._run(count_query, params).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+        # Join context + partner tables to render one combined partner-machine display string for each code row.
+        query = (
+            "SELECT h.how_code AS conversion_code, h.created_by AS owner, h.created_at, "
+            "CONCAT(COALESCE(lp.partner_name, c.partner_code, ''), ' - ', COALESCE(c.machine_code, '')) AS conversion_partner "
+            f"FROM `{self.dataset}.conversion1_how` h "
+            f"LEFT JOIN `{self.dataset}.conversion1_context` c ON c.context_code = h.context_code "
+            "AND c.is_active = TRUE "
+            f"LEFT JOIN `{self.dataset}.location_partners` lp ON lp.partner_code = c.partner_code "
+            f"{where_clause} "
+            "ORDER BY h.created_at DESC, h.how_code DESC LIMIT @limit OFFSET @offset"
+        )
+        offset = max(page - 1, 0) * page_size
+        data_params = [*params, bigquery.ScalarQueryParameter("limit", "INT64", page_size), bigquery.ScalarQueryParameter("offset", "INT64", offset)]
+        rows = self._run(query, data_params).result()
+        return [dict(row) for row in rows], total
+
     def create_compounding_how(
         self,
         processing_code: str,
@@ -1423,6 +1460,16 @@ class BigQueryService:
             f"FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE ORDER BY created_at DESC, sequence_number DESC"
         )
         return [dict(row) for row in self._run(query, []).result()]
+
+    def list_pellet_bag_codes(self) -> List[str]:
+        # Return unique pellet bag codes for dropdown/manual validation on conversion pages.
+        query = (
+            f"SELECT DISTINCT pellet_bag_code FROM `{self.dataset}.pellet_bags` "
+            "WHERE is_active = TRUE AND pellet_bag_code IS NOT NULL AND TRIM(pellet_bag_code) != '' "
+            "ORDER BY pellet_bag_code"
+        )
+        rows = self._run(query, []).result()
+        return [str(row["pellet_bag_code"]).strip() for row in rows]
 
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
