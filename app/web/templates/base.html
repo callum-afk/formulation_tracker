@@ -100,8 +100,8 @@
       <!-- Footer profile card anchors the sidebar similarly to the design reference. -->
       <div class="sidebar-user-card" aria-label="Signed in user">
         <div>
-          <strong>{{ request.state.actor if request.state.actor else "Unknown user" }}</strong>
-          <small>Formulation team</small>
+          <strong>{{ request.state.user_email if request.state.user_email else "Unknown user" }}</strong>
+          <small>Signed in user</small>
         </div>
       </div>
     </aside>

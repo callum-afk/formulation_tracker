@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Dashboard</h2>
+  <div class="grid">
+    {% for section in status_sections %}
+    <div class="panel">
+      <h3>{{ section.title }}</h3>
+      <table>
+        <thead><tr><th>Pellet bag code</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for item in section.items %}
+          <tr>
+            <td><a href="/pellet-bags/{{ item.pellet_bag_code }}">{{ item.pellet_bag_code }}</a></td>
+            <td>{{ item.status_value }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="2">No items</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p><a href="/pellet-bags/status/{{ section.column }}">View all</a></p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
