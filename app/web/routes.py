@@ -15,13 +15,22 @@ templates = Jinja2Templates(directory="app/web/templates")
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Build dashboard sections for each meaningful pellet bag status stream.
+    # Build dashboard sections grouped into quality control and processing workstreams.
     status_sections = [
-        {"title": "Long Moisture", "column": "long_moisture_status", "items": bigquery.list_pellet_bags_with_meaningful_status("long_moisture_status")},
-        {"title": "Density", "column": "density_status", "items": bigquery.list_pellet_bags_with_meaningful_status("density_status")},
-        {"title": "Injection Moulding Status", "column": "injection_moulding_status", "items": bigquery.list_pellet_bags_with_meaningful_status("injection_moulding_status")},
-        {"title": "Film Forming Status", "column": "film_forming_status", "items": bigquery.list_pellet_bags_with_meaningful_status("film_forming_status")},
-        {"title": "QC Team View", "column": "qc_status", "items": bigquery.list_pellet_bags_with_meaningful_status("qc_status")},
+        {
+            "title": "Quality Control",
+            "items": [
+                {"title": "Long Moisture Status", "column": "long_moisture_status", "items": bigquery.list_pellet_bags_with_meaningful_status("long_moisture_status")},
+                {"title": "Density Status", "column": "density_status", "items": bigquery.list_pellet_bags_with_meaningful_status("density_status")},
+            ],
+        },
+        {
+            "title": "Processing",
+            "items": [
+                {"title": "Injection Moulding Status", "column": "injection_moulding_status", "items": bigquery.list_pellet_bags_with_meaningful_status("injection_moulding_status")},
+                {"title": "Film Forming Status", "column": "film_forming_status", "items": bigquery.list_pellet_bags_with_meaningful_status("film_forming_status")},
+            ],
+        },
     ]
     # Render the dashboard at root so Cloud Run domain root lands on operational status panels.
     return templates.TemplateResponse(

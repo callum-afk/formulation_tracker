@@ -10,6 +10,14 @@
   <!-- Sidebar configuration lives in one place so every page uses one shared nav structure. -->
   {% set sidebar_groups = [
     {
+      "id": "dashboard",
+      "label": "General",
+      "default_open": true,
+      "items": [
+        {"label": "Dashboard", "href": "/"}
+      ]
+    },
+    {
       "id": "ingredients",
       "label": "Ingredients",
       "default_open": true,
@@ -65,7 +73,7 @@
       <!-- Sidebar header keeps product identity visible above grouped links. -->
       <div class="sidebar-brand">
         <!-- Brand title text is split across two lines to prevent sidebar overflow and match the reference UI. -->
-        <h1 class="site-title"><img class="site-logo" src="https://imagedelivery.net/WWB_1xpr0hQZ8HyAj4j9Mg/92e7e1f1-0166-44df-cfa5-5e92ca2dad00/thumb" alt="Notpla logo" /> <span class="site-title-text">Formulation<br />Tracker</span></h1>
+        <h1 class="site-title"><a href="/"><img class="site-logo" src="https://imagedelivery.net/WWB_1xpr0hQZ8HyAj4j9Mg/92e7e1f1-0166-44df-cfa5-5e92ca2dad00/thumb" alt="Notpla logo" /> <span class="site-title-text">Formulation<br />Tracker</span></a></h1>
         <span class="app-version">{{ request.app.state.settings.app_version }}</span>
       </div>
 

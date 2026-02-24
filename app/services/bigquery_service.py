@@ -1181,10 +1181,20 @@ class BigQueryService:
         return {"ingredient": ingredient, "formulations": formulations, "pellet_bags": pellet_bags}
 
     def get_pellet_bag_detail(self, pellet_bag_code: str) -> Optional[Dict[str, Any]]:
-        # Load one pellet bag row and enrich it with compounding context for the detail page.
+        # Load one pellet bag row and enrich it with compounding + location partner context for the detail page.
         pellet_query = (
-            f"SELECT * FROM `{self.dataset}.pellet_bags` "
-            "WHERE pellet_bag_code = @pellet_bag_code AND is_active = TRUE LIMIT 1"
+            f"SELECT p.*, "
+            "c.location_code, "
+            "c.failure_mode, "
+            "c.machine_setup_url, "
+            "c.processed_data_url, "
+            "lp.partner_name AS compounding_partner_name, "
+            "COALESCE(lp.machine_specification, lc.partner_code) AS machine "
+            f"FROM `{self.dataset}.pellet_bags` p "
+            f"LEFT JOIN `{self.dataset}.compounding_how` c ON c.processing_code = p.compounding_how_code AND c.is_active = TRUE "
+            f"LEFT JOIN `{self.dataset}.location_codes` lc ON lc.location_id = c.location_code "
+            f"LEFT JOIN `{self.dataset}.location_partners` lp ON lp.partner_code = lc.partner_code "
+            "WHERE p.pellet_bag_code = @pellet_bag_code AND p.is_active = TRUE LIMIT 1"
         )
         rows = list(self._run(pellet_query, [bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_bag_code)]).result())
         if not rows:
@@ -1199,7 +1209,25 @@ class BigQueryService:
             comp_rows = list(self._run(comp_query, [bigquery.ScalarQueryParameter("processing_code", "STRING", pellet["compounding_how_code"])]).result())
             if comp_rows:
                 compounding = dict(comp_rows[0])
-        return {"pellet_bag": pellet, "compounding_how": compounding}
+        # Attach related formulation rows by decoding set/weight/batch tokens from the compounding location code.
+        formulations = self.list_formulations_for_pellet_bag(pellet_bag_code)
+        return {"pellet_bag": pellet, "compounding_how": compounding, "formulations": formulations}
+
+    def list_formulations_for_pellet_bag(self, pellet_bag_code: str) -> List[Dict[str, Any]]:
+        # Resolve formulation rows connected to a pellet bag via compounding_how.location_code token mapping.
+        query = (
+            f"SELECT f.* "
+            f"FROM `{self.dataset}.pellet_bags` p "
+            f"JOIN `{self.dataset}.compounding_how` c ON c.processing_code = p.compounding_how_code AND c.is_active = TRUE "
+            f"JOIN `{self.dataset}.v_formulations_flat` f "
+            "ON f.set_code = SPLIT(c.location_code, ' ')[SAFE_OFFSET(0)] "
+            "AND f.weight_code = SPLIT(c.location_code, ' ')[SAFE_OFFSET(1)] "
+            "AND f.batch_variant_code = SPLIT(c.location_code, ' ')[SAFE_OFFSET(2)] "
+            "WHERE p.pellet_bag_code = @pellet_bag_code AND p.is_active = TRUE "
+            "ORDER BY f.created_at DESC"
+        )
+        params = [bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_bag_code)]
+        return [dict(row) for row in self._run(query, params).result()]
 
     def list_pellet_bags_with_meaningful_status(self, status_column: str, limit: int = 25) -> List[Dict[str, Any]]:
         # Restrict status filters to known columns to avoid unsafe dynamic SQL.
@@ -1213,8 +1241,14 @@ class BigQueryService:
         if status_column not in allowed_columns:
             raise ValueError("Invalid status column")
         # Query rows where the chosen status is meaningful and not in excluded sentinel values.
+        # Map each status stream to its dedicated assignee field; QC statuses fall back to creator ownership.
+        assigned_expression = "created_by"
+        if status_column == "injection_moulding_status":
+            assigned_expression = "COALESCE(injection_moulding_assignee_email, created_by)"
+        elif status_column == "film_forming_status":
+            assigned_expression = "COALESCE(film_forming_assignee_email, created_by)"
         query = (
-            f"SELECT pellet_bag_id, pellet_bag_code, {status_column} AS status_value, updated_at, created_at "
+            f"SELECT pellet_bag_id, pellet_bag_code, {status_column} AS status_value, {assigned_expression} AS assigned_to, updated_at, created_at "
             f"FROM `{self.dataset}.pellet_bags` "
             f"WHERE is_active = TRUE AND {status_column} IS NOT NULL "
             f"AND TRIM({status_column}) != '' "
@@ -1222,6 +1256,7 @@ class BigQueryService:
             "ORDER BY COALESCE(updated_at, created_at) DESC LIMIT @limit"
         )
         return [dict(row) for row in self._run(query, [bigquery.ScalarQueryParameter("limit", "INT64", limit)]).result()]
+
     def list_pellet_bags(self) -> List[Dict[str, Any]]:
         # Return active pellet bag records newest-first for the management table.
         query = (

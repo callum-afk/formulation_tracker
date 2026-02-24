@@ -1710,7 +1710,8 @@ function attachPelletBagsPage() {
     const list = document.createElement('ul');
     items.forEach((item) => {
       const li = document.createElement('li');
-      const text = document.createElement('span');
+      const text = document.createElement('a');
+      text.href = `/pellet-bags/${encodeURIComponent(item.pellet_bag_code || '')}`;
       text.textContent = item.pellet_bag_code || '';
       const button = document.createElement('button');
       button.type = 'button';
@@ -1911,6 +1912,30 @@ function attachPelletBagsPage() {
 }
 
 
+
+// Render formulations on the pellet bag detail page from server-provided JSON payload.
+function attachPelletBagDetailFormulations() {
+  // Locate the pellet detail formulation container and exit on non-detail routes.
+  const container = document.getElementById('pellet-detail-formulations');
+  if (!container) return;
+
+  // Read embedded JSON payload prepared by the server route to avoid an extra API round-trip.
+  const dataNode = document.getElementById('pellet-detail-formulations-data');
+  if (!dataNode) return;
+
+  try {
+    // Parse formulations and reuse the shared formulation table renderer for matching styles.
+    const formulations = JSON.parse(dataNode.textContent || '[]');
+    renderFormulationsTable(container, Array.isArray(formulations) ? formulations : []);
+    // Apply reusable sticky first-column behaviour used by the formulation page table.
+    const table = container.querySelector('table');
+    decorateReusableTable(table, 0);
+  } catch (error) {
+    // Fall back to an inline error message if payload parsing fails for any reason.
+    container.textContent = `Unable to render formulations: ${error.message}`;
+  }
+}
+
 // Keep sidebar group expansion state stable across route changes and browser refreshes.
 function attachSidebarNavigation() {
   // Query all accordion groups rendered by the shared sidebar template.
@@ -2007,4 +2032,5 @@ attachLocationPartnerUtilityForm();
 attachCompoundingHowPage();
 attachPelletBagsPage();
 attachBatchDetailFormulations();
+attachPelletBagDetailFormulations();
 attachSidebarNavigation();

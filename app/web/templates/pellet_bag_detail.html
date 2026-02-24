@@ -2,11 +2,23 @@
 {% block content %}
 <section class="panel">
   <h2>Pellet bag detail</h2>
+  {% set excluded_pellet_fields = ["pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "compounding_partner_name", "machine", "location_code", "failure_mode", "machine_setup_url", "processed_data_url"] %}
   <table>
     <tbody>
       {% for key, value in detail.pellet_bag.items() %}
-      <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+      {% if key not in excluded_pellet_fields %}
+      <tr>
+        <th>{{ key }}</th>
+        {% if key == "pellet_bag_code" %}
+        <td><a href="/pellet-bags/{{ value }}">{{ value }}</a></td>
+        {% else %}
+        <td>{{ value }}</td>
+        {% endif %}
+      </tr>
+      {% endif %}
       {% endfor %}
+      <tr><th>compounding_partner_name</th><td>{{ detail.pellet_bag.compounding_partner_name or "Unknown" }}</td></tr>
+      <tr><th>machine</th><td>{{ detail.pellet_bag.machine or "Unknown" }}</td></tr>
     </tbody>
   </table>
 </section>
@@ -23,5 +35,10 @@
   {% else %}
   <p>No compounding context found</p>
   {% endif %}
+</section>
+<section class="panel">
+  <h2>Formulation Table</h2>
+  <div id="pellet-detail-formulations"></div>
+  <script id="pellet-detail-formulations-data" type="application/json">{{ detail.formulations | tojson }}</script>
 </section>
 {% endblock %}

@@ -358,6 +358,16 @@ a:hover {
   color: var(--color-ink-900);
 }
 
+/* Keep the brand title link visually identical to static text while making the whole block clickable. */
+.site-title a {
+  color: inherit;
+  text-decoration: none;
+  display: inline-grid;
+  align-items: start;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
 /* Two-line title text is an inline block so the forced line break renders as a compact stacked label. */
 .site-title-text {
   display: inline-block;
