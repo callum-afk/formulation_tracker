@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Pellet bag detail</h2>
+  <table>
+    <tbody>
+      {% for key, value in detail.pellet_bag.items() %}
+      <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="panel">
+  <h2>Compounding context</h2>
+  {% if detail.compounding_how %}
+  <table>
+    <tbody>
+      {% for key, value in detail.compounding_how.items() %}
+      <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No compounding context found</p>
+  {% endif %}
+</section>
+{% endblock %}

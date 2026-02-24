@@ -56,7 +56,7 @@
     <tbody>
       {% for item in items %}
       <tr>
-        <td>{{ item.sku }}</td><td>{{ item.trade_name_inci }}</td><td>{{ item.supplier }}</td><td>{{ item.spec_grade or "" }}</td><td>{{ item.format }}</td><td>{{ item.pack_size_value }} {{ item.pack_size_unit }}</td>
+        <td><a href="/ingredients/{{ item.sku }}">{{ item.sku }}</a></td><td>{{ item.trade_name_inci }}</td><td>{{ item.supplier }}</td><td>{{ item.spec_grade or "" }}</td><td>{{ item.format }}</td><td>{{ item.pack_size_value }} {{ item.pack_size_unit }}</td>
         <td>{{ item.created_by or "" }}</td>
         <td>{% if item.msds_object_path %}<a href="/ingredients/{{ item.sku }}/msds">MSDS</a>{% else %}None{% endif %}</td>
         <td><a href="/ingredients/{{ item.sku }}/edit">Edit</a></td>

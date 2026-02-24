@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h2>Ingredient summary</h2>
+  <table>
+    <tbody>
+      {% for key, value in summary.ingredient.items() %}
+      <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="panel">
+  <h2>Formulations containing SKU</h2>
+  <table>
+    <thead><tr><th>Formulation code</th><th>Set code</th><th>Weight code</th><th>Batch variant code</th></tr></thead>
+    <tbody>
+      {% for row in summary.formulations %}
+      <tr>
+        <td><a href="/location_codes">{{ row.base_code }}</a></td>
+        <td>{{ row.set_code }}</td>
+        <td>{{ row.weight_code }}</td>
+        <td>{{ row.batch_variant_code }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No formulations found</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="panel">
+  <h2>Pellet bags containing SKU</h2>
+  <table>
+    <thead><tr><th>Pellet bag code</th><th>Compounding how code</th></tr></thead>
+    <tbody>
+      {% for row in summary.pellet_bags %}
+      <tr>
+        <td><a href="/pellet-bags/{{ row.pellet_bag_code }}">{{ row.pellet_bag_code }}</a></td>
+        <td>{{ row.compounding_how_code }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No pellet bags found</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

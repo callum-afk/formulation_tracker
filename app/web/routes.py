@@ -14,12 +14,25 @@ templates = Jinja2Templates(directory="app/web/templates")
 
 
 @router.get("/", response_class=HTMLResponse)
-async def home(
-    request: Request,
-    q: str | None = None,
-    bigquery: BigQueryService = Depends(get_bigquery),
-) -> HTMLResponse:
-    # Render the ingredients landing page at root so / and /ingredients behave consistently.
+async def dashboard(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Build dashboard sections for each meaningful pellet bag status stream.
+    status_sections = [
+        {"title": "Long Moisture", "column": "long_moisture_status", "items": bigquery.list_pellet_bags_with_meaningful_status("long_moisture_status")},
+        {"title": "Density", "column": "density_status", "items": bigquery.list_pellet_bags_with_meaningful_status("density_status")},
+        {"title": "Injection Moulding Status", "column": "injection_moulding_status", "items": bigquery.list_pellet_bags_with_meaningful_status("injection_moulding_status")},
+        {"title": "Film Forming Status", "column": "film_forming_status", "items": bigquery.list_pellet_bags_with_meaningful_status("film_forming_status")},
+        {"title": "QC Team View", "column": "qc_status", "items": bigquery.list_pellet_bags_with_meaningful_status("qc_status")},
+    ]
+    # Render the dashboard at root so Cloud Run domain root lands on operational status panels.
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request, "title": "Dashboard", "status_sections": status_sections},
+    )
+
+
+@router.get("/about", response_class=HTMLResponse)
+async def about(request: Request, q: str | None = None, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Preserve previous landing page behaviour under a dedicated informational route.
     filters = {"q": q} if q else {}
     items = bigquery.list_ingredients(filters)
     return templates.TemplateResponse(
@@ -128,6 +141,16 @@ async def compounding_how(request: Request) -> HTMLResponse:
         {"request": request, "title": "How"},
     )
 
+@router.get("/pellet-bags/status/{status_column}", response_class=HTMLResponse)
+async def pellet_bag_status_list(status_column: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Render full status list pages used by dashboard view all links.
+    items = bigquery.list_pellet_bags_with_meaningful_status(status_column, limit=500)
+    return templates.TemplateResponse(
+        "pellet_bag_status_list.html",
+        {"request": request, "title": "Pellet Bag Status List", "status_column": status_column, "items": items},
+    )
+
+
 @router.get("/pellet_bags", response_class=HTMLResponse)
 async def pellet_bags(request: Request) -> HTMLResponse:
     # Serve pellet bag code minting and management workflow page.
@@ -145,6 +168,30 @@ async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService 
     return templates.TemplateResponse(
         "ingredient_edit.html",
         {"request": request, "title": f"Edit {sku}", "ingredient": ingredient},
+    )
+
+
+@router.get("/ingredients/{sku}", response_class=HTMLResponse)
+async def sku_detail(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Render a SKU summary page with linked formulation and pellet bag context.
+    summary = bigquery.get_sku_summary(sku)
+    if not summary.get("ingredient"):
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    return templates.TemplateResponse(
+        "sku_detail.html",
+        {"request": request, "title": f"SKU {sku}", "sku": sku, "summary": summary},
+    )
+
+
+@router.get("/pellet-bags/{pellet_bag_code}", response_class=HTMLResponse)
+async def pellet_bag_detail(pellet_bag_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Render one pellet bag detail page with all known fields and compounding context.
+    detail = bigquery.get_pellet_bag_detail(pellet_bag_code)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Pellet bag not found")
+    return templates.TemplateResponse(
+        "pellet_bag_detail.html",
+        {"request": request, "title": f"Pellet bag {pellet_bag_code}", "detail": detail},
     )
 
 

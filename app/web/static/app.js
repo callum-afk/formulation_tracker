@@ -1806,7 +1806,10 @@ function attachPelletBagsPage() {
       const row = document.createElement('tr');
       const pelletCodeCell = document.createElement('td');
       // Keep full pellet bag codes on one line and wide enough so token groups remain legible.
-      pelletCodeCell.textContent = item.pellet_bag_code ?? '';
+      const pelletCodeLink = document.createElement('a');
+      pelletCodeLink.href = `/pellet-bags/${encodeURIComponent(item.pellet_bag_code ?? '')}`;
+      pelletCodeLink.textContent = item.pellet_bag_code ?? '';
+      pelletCodeCell.appendChild(pelletCodeLink);
       pelletCodeCell.classList.add('pellet-code-cell');
       row.appendChild(pelletCodeCell);
 

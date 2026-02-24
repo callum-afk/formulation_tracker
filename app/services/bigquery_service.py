@@ -338,13 +338,17 @@ class BigQueryService:
         ).result()
 
     def list_ingredients(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        # Build optional WHERE predicates from supplied filters while keeping query parameters fully typed.
         where = []
+        # Collect query parameters centrally so all filters remain SQL-injection safe.
         params: List[bigquery.ScalarQueryParameter] = []
         if "q" in filters:
+            # Apply case-insensitive search by comparing lower-cased columns to a lower-cased search token.
             where.append(
-                "(sku LIKE @q OR trade_name_inci LIKE @q OR supplier LIKE @q)"
+                "(LOWER(sku) LIKE @q OR LOWER(trade_name_inci) LIKE @q OR LOWER(supplier) LIKE @q)"
             )
-            params.append(bigquery.ScalarQueryParameter("q", "STRING", f"%{filters['q']}%"))
+            # Normalise the search term to lower case so user input casing never affects matches.
+            params.append(bigquery.ScalarQueryParameter("q", "STRING", f"%{str(filters['q']).lower()}%"))
         for field in ("category_code", "format", "pack_size_unit", "is_active"):
             if field in filters:
                 where.append(f"{field} = @{field}")
@@ -1148,6 +1152,76 @@ class BigQueryService:
             })
         return created_items
 
+
+    def get_sku_summary(self, sku: str) -> Dict[str, List[Dict[str, Any]] | Optional[Dict[str, Any]]]:
+        # Fetch ingredient record plus related formulation and pellet bag links for the SKU detail page.
+        ingredient = self.get_ingredient(sku)
+        formulations_query = (
+            f"SELECT set_code, weight_code, batch_variant_code, base_code, created_at "
+            f"FROM `{self.dataset}.v_formulations_flat` "
+            "WHERE EXISTS (SELECT 1 FROM UNNEST(sku_list) AS listed_sku WHERE listed_sku = @sku) "
+            "ORDER BY created_at DESC"
+        )
+        formulations = [
+            dict(row)
+            for row in self._run(formulations_query, [bigquery.ScalarQueryParameter("sku", "STRING", sku)]).result()
+        ]
+        pellet_query = (
+            f"SELECT DISTINCT p.pellet_bag_id, p.pellet_bag_code, p.compounding_how_code, p.updated_at, p.created_at "
+            f"FROM `{self.dataset}.pellet_bags` p "
+            f"JOIN `{self.dataset}.compounding_how` c ON c.processing_code = p.compounding_how_code "
+            "LEFT JOIN UNNEST(SPLIT(c.location_code, '_')) token "
+            "WHERE p.is_active = TRUE AND LOWER(token) = LOWER(@sku) "
+            "ORDER BY updated_at DESC, created_at DESC"
+        )
+        pellet_bags = [
+            dict(row)
+            for row in self._run(pellet_query, [bigquery.ScalarQueryParameter("sku", "STRING", sku)]).result()
+        ]
+        return {"ingredient": ingredient, "formulations": formulations, "pellet_bags": pellet_bags}
+
+    def get_pellet_bag_detail(self, pellet_bag_code: str) -> Optional[Dict[str, Any]]:
+        # Load one pellet bag row and enrich it with compounding context for the detail page.
+        pellet_query = (
+            f"SELECT * FROM `{self.dataset}.pellet_bags` "
+            "WHERE pellet_bag_code = @pellet_bag_code AND is_active = TRUE LIMIT 1"
+        )
+        rows = list(self._run(pellet_query, [bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_bag_code)]).result())
+        if not rows:
+            return None
+        pellet = dict(rows[0])
+        compounding = None
+        if pellet.get("compounding_how_code"):
+            comp_query = (
+                f"SELECT * FROM `{self.dataset}.compounding_how` "
+                "WHERE processing_code = @processing_code AND is_active = TRUE LIMIT 1"
+            )
+            comp_rows = list(self._run(comp_query, [bigquery.ScalarQueryParameter("processing_code", "STRING", pellet["compounding_how_code"])]).result())
+            if comp_rows:
+                compounding = dict(comp_rows[0])
+        return {"pellet_bag": pellet, "compounding_how": compounding}
+
+    def list_pellet_bags_with_meaningful_status(self, status_column: str, limit: int = 25) -> List[Dict[str, Any]]:
+        # Restrict status filters to known columns to avoid unsafe dynamic SQL.
+        allowed_columns = {
+            "long_moisture_status",
+            "density_status",
+            "injection_moulding_status",
+            "film_forming_status",
+            "qc_status",
+        }
+        if status_column not in allowed_columns:
+            raise ValueError("Invalid status column")
+        # Query rows where the chosen status is meaningful and not in excluded sentinel values.
+        query = (
+            f"SELECT pellet_bag_id, pellet_bag_code, {status_column} AS status_value, updated_at, created_at "
+            f"FROM `{self.dataset}.pellet_bags` "
+            f"WHERE is_active = TRUE AND {status_column} IS NOT NULL "
+            f"AND TRIM({status_column}) != '' "
+            f"AND LOWER(TRIM({status_column})) NOT IN ('not requested', 'not received') "
+            "ORDER BY COALESCE(updated_at, created_at) DESC LIMIT @limit"
+        )
+        return [dict(row) for row in self._run(query, [bigquery.ScalarQueryParameter("limit", "INT64", limit)]).result()]
     def list_pellet_bags(self) -> List[Dict[str, Any]]:
         # Return active pellet bag records newest-first for the management table.
         query = (

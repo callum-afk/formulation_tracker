@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.auth import get_auth_context
@@ -49,8 +49,15 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     try:
-        get_auth_context(request)
+        # Parse auth context once in middleware so downstream routes and templates can reuse user metadata.
+        auth_context = get_auth_context(request)
+        # Store actor and email on request state for template rendering and audit logging consistency.
+        request.state.actor = auth_context.email
+        request.state.user_email = auth_context.email
     except ValueError as exc:
+        # Ensure templates that render user boxes never crash when auth parsing fails.
+        request.state.actor = None
+        request.state.user_email = None
         return JSONResponse(status_code=401, content={"ok": False, "error": str(exc)})
 
     return await call_next(request)
@@ -59,11 +66,6 @@ async def auth_middleware(request: Request, call_next):
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True}
-
-@app.get("/")
-def root() -> RedirectResponse:
-    # Redirect legacy root requests to the ingredients UI route to keep browser entry consistent.
-    return RedirectResponse(url="/ingredients", status_code=307)
 
 app.include_router(ingredients_router)
 app.include_router(batches_router)
