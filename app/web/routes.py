@@ -381,7 +381,9 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
     form = await request.form()
     context_code_select = " ".join(str(form.get("context_code_select", "")).strip().split())
     context_code_manual = " ".join(str(form.get("context_code_manual", "")).strip().split())
+    # Read required Process Code and Processing Code independently to match Mixing How-style behavior.
     process_code = str(form.get("process_code", "")).strip().upper()
+    processing_code = str(form.get("processing_code", "")).strip().upper()
     failure_mode = str(form.get("failure_mode", "")).strip()
     machine_setup_url = str(form.get("machine_setup_url", "")).strip()
     processed_data_url = str(form.get("processed_data_url", "")).strip()
@@ -395,15 +397,17 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
     context_codes = [str(row.get("conversion_code") or "").strip() for row in context_rows if str(row.get("conversion_code") or "").strip()]
     failure_modes = bigquery.get_failure_modes()
 
-    # Validate required context code and ensure the full code already exists in Conversion 1 Context storage.
+    # Validate that context code is present because both generation and save require this field.
     if not context_code:
         errors.append("Context code is required (dropdown or text entry).")
-    elif not bigquery.conversion1_context_exists(context_code):
-        errors.append("Context code was not found. Please use an existing full context code.")
 
-    # Validate process code format when provided manually.
+    # Validate process code format when provided manually because save requires it.
     if process_code and (len(process_code) != 2 or not process_code.isalpha()):
         errors.append("Process code must be a two-letter code like AB.")
+
+    # Validate processing code format when entered manually or generated from active rows.
+    if processing_code and (len(processing_code) != 2 or not processing_code.isalpha()):
+        errors.append("Processing code must be a two-letter code like AB.")
 
     # Validate failure mode selection against the same shared canonical source as pellet-bag workflows.
     if failure_mode and failure_mode not in failure_modes:
@@ -415,26 +419,35 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
     if processed_data_url and not _is_google_drive_url(processed_data_url):
         errors.append("Processed Data File URL must be a valid Google Drive/Docs link.")
 
-    # Determine generated process code from persisted rows only so repeated Generate clicks stay stable until save.
-    generated_process_code = process_code or bigquery.get_next_conversion1_how_process_code(start_code="AB")
-    # Build processing/how code exactly as context code + one space + process code.
-    generated_how_code = f"{context_code} {generated_process_code}".strip() if context_code else ""
+    # Generate button only allocates next Processing Code for the selected/typed context code.
+    if submit_action == "generate" and context_code and not errors:
+        processing_code = bigquery.get_next_conversion1_how_process_code(context_code=context_code, start_code="AB")
 
-    # Save action requires failure mode and generated code, then upserts to BigQuery.
-    if submit_action == "save" and not errors:
+    # Build full code preview exactly as context code + one space + processing code.
+    generated_how_code = f"{context_code} {processing_code}".strip() if context_code and processing_code else ""
+
+    # Save action validates required fields and applies default failure-mode behavior.
+    if submit_action == "save":
+        if not process_code:
+            errors.append("Process code is required.")
+        if not processing_code:
+            errors.append("Processing code is required.")
         if not failure_mode:
-            errors.append("Failure mode is required to save Conversion How.")
-        if not generated_how_code:
-            errors.append("Conversion 1 How code could not be generated.")
+            # Default failure mode to N/A when user leaves it blank.
+            failure_mode = "N/A"
+
+    # Save action blocks duplicates when context_code + processing_code already exists as active.
+    if submit_action == "save" and not errors and bigquery.conversion1_how_processing_code_exists(context_code, processing_code):
+        errors.append("Processing code already exists for this context code. Please use a different processing code.")
 
     if submit_action == "save" and not errors:
-        # Persist Conversion 1 How row with deterministic merge semantics and signed-in owner metadata.
+        # Persist Conversion 1 How row without writing legacy fields and without regenerating any codes.
         bigquery.create_or_update_conversion1_how(
             {
                 "conversion1_how_code": generated_how_code,
                 "context_code": context_code,
-                "process_code": generated_process_code,
-                "processing_code": generated_how_code,
+                "process_code": process_code,
+                "processing_code": processing_code,
                 "failure_mode": failure_mode,
                 "machine_setup_url": machine_setup_url or None,
                 "processed_data_url": processed_data_url or None,
@@ -454,7 +467,8 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             "errors": errors,
             "result": {
                 "conversion1_how_code": generated_how_code,
-                "process_code": generated_process_code,
+                "process_code": process_code,
+                "processing_code": processing_code,
             } if generated_how_code else None,
             "rows": _to_json_safe(rows),
             "filters": {"q": ""},
@@ -468,7 +482,8 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             "form_data": {
                 "context_code_select": context_code_select,
                 "context_code_manual": context_code_manual,
-                "process_code": generated_process_code,
+                "process_code": process_code,
+                "processing_code": processing_code,
                 "failure_mode": failure_mode,
                 "machine_setup_url": machine_setup_url,
                 "processed_data_url": processed_data_url,
