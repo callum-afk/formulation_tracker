@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.dependencies import get_bigquery, get_settings, get_storage
-from app.constants import DEFAULT_PAGE_SIZE, FAILURE_MODES, MAX_PAGE_SIZE
+from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.services.bigquery_service import BigQueryService
 from app.services.storage_service import StorageService
 
@@ -284,15 +284,8 @@ async def conversion1_context_submit(request: Request, bigquery: BigQueryService
             date_yymmdd=date_yymmdd,
             user_email=request.state.user_email,
         )
-        # Persist generated conversion code row with Context metadata and optional How fields left blank.
-        result = bigquery.create_or_update_conversion1_how(
-            context_code=str(context.get("context_code") or ""),
-            notes=None,
-            failure_mode=None,
-            setup_link=None,
-            processed_data_link=None,
-            user_email=request.state.user_email,
-        )
+        # Return the generated Context code directly because Conversion 1 How is intentionally removed.
+        result = {"conversion_code": str(context.get("context_code") or "")}
     # Reload first page after submission so newest entry appears immediately with any validation feedback.
     rows, total = bigquery.list_conversion1_codes_paginated(
         search=None,
@@ -323,117 +316,6 @@ async def conversion1_context_submit(request: Request, bigquery: BigQueryService
             },
             "pellet_codes": pellet_codes,
             "partner_machine_options": partner_machine_options,
-        },
-        status_code=400 if errors else 200,
-    )
-
-
-@router.get("/conversion1/how", response_class=HTMLResponse)
-async def conversion1_how_page(
-    request: Request,
-    page: int = 1,
-    page_size: int = DEFAULT_PAGE_SIZE,
-    bigquery: BigQueryService = Depends(get_bigquery),
-) -> HTMLResponse:
-    # Clamp pagination values so large requests cannot exceed configured server limits.
-    safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
-    safe_page = max(1, page)
-    # Load paginated How entries for the lower table panel.
-    rows, total = bigquery.list_conversion1_how(
-        context_code=None,
-        process_id=None,
-        failure_mode=None,
-        search=None,
-        page=safe_page,
-        page_size=safe_page_size,
-    )
-    # Load Context code options for dropdown selection in the form panel.
-    context_codes = bigquery.list_conversion1_context_codes()
-    return templates.TemplateResponse(
-        "conversion1_how.html",
-        {
-            "request": request,
-            "title": "Conversion 1",
-            "errors": [],
-            "result": None,
-            "rows": _to_json_safe(rows),
-            "pagination": {
-                "page": safe_page,
-                "page_size": safe_page_size,
-                "total": total,
-                "has_prev": safe_page > 1,
-                "has_next": safe_page * safe_page_size < total,
-            },
-            "form_data": {"processing_code": "AB"},
-            "context_codes": context_codes,
-            "failure_modes": FAILURE_MODES,
-        },
-    )
-
-
-@router.post("/conversion1/how", response_class=HTMLResponse)
-async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Parse and normalize form fields for Conversion How persistence.
-    form = await request.form()
-    context_code = " ".join(str(form.get("context_code", "")).strip().split())
-    processing_code = " ".join(str(form.get("processing_code", "AB")).strip().split()) or "AB"
-    failure_mode = str(form.get("failure_mode", "")).strip()
-    machine_setup_file = str(form.get("machine_setup_file", "")).strip()
-    processed_data_file = str(form.get("processed_data_file", "")).strip()
-    errors: list[str] = []
-    # Validate context code selection against active persisted context rows.
-    context_codes = bigquery.list_conversion1_context_codes()
-    if not context_code:
-        errors.append("Context code is required.")
-    elif context_code not in set(context_codes):
-        errors.append("Context code must be selected from the available list.")
-    # Validate failure mode selection when provided to keep table values standardized.
-    if failure_mode and failure_mode not in FAILURE_MODES:
-        errors.append("Failure mode must be selected from the available options.")
-    result = None
-    if not errors:
-        # Persist one Conversion 1 How row using selected context and optional link fields.
-        result = bigquery.create_or_update_conversion1_how(
-            context_code=context_code,
-            notes=f"Processing code: {processing_code}",
-            failure_mode=failure_mode or None,
-            setup_link=machine_setup_file or None,
-            processed_data_link=processed_data_file or None,
-            user_email=request.state.user_email,
-        )
-    # Reload first page after save so newly inserted row is immediately visible.
-    rows, total = bigquery.list_conversion1_how(
-        context_code=None,
-        process_id=None,
-        failure_mode=None,
-        search=None,
-        page=1,
-        page_size=DEFAULT_PAGE_SIZE,
-    )
-    return templates.TemplateResponse(
-        "conversion1_how.html",
-        {
-            "request": request,
-            "title": "Conversion 1",
-            "errors": errors,
-            "result": _to_json_safe(result) if result else None,
-            "rows": _to_json_safe(rows),
-            "pagination": {
-                "page": 1,
-                "page_size": DEFAULT_PAGE_SIZE,
-                "total": total,
-                "has_prev": False,
-                "has_next": DEFAULT_PAGE_SIZE < total,
-            },
-            "form_data": {
-                "context_code": context_code,
-                "processing_code": processing_code,
-                "failure_mode": failure_mode,
-                "machine_setup_file": machine_setup_file,
-                "processed_data_file": processed_data_file,
-            },
-            "context_codes": context_codes,
-            "failure_modes": FAILURE_MODES,
         },
         status_code=400 if errors else 200,
     )
