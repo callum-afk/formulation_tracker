@@ -135,10 +135,14 @@ def create_conversion1_products(
     if not bigquery.conversion1_how_exists(payload.conversion1_how_code):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid conversion1_how_code")
 
+    # Reuse shared payload validation so create and update enforce the same option constraints.
+    validated_optional_fields = _validate_update_payload(payload.dict(exclude_unset=True), update=False)
+
     created = bigquery.create_conversion1_products(
         how_code=payload.conversion1_how_code,
         n=payload.number_of_records,
         created_by=actor.email if actor else None,
+        optional_fields=validated_optional_fields,
     )
     return ApiResponse(ok=True, data={"items": created})
 
