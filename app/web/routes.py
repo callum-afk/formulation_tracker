@@ -77,14 +77,15 @@ def _to_json_safe(value):
 def _resolve_conversion1_how_codes(process_code: str, processing_code: str, submit_action: str) -> tuple[list[str], str]:
     # Track code-field validation errors so route handlers can combine them with URL and context-code checks.
     errors: list[str] = []
-    # Require users to supply an existing process code when persisting How rows.
-    if submit_action == "save" and not process_code:
-        errors.append("Use Existing Process Code is required.")
-    # Require users to generate a new processing code before persisting How rows.
-    if submit_action == "save" and not processing_code:
-        errors.append("Generate New Process Code is required. Click Generate code first.")
+    # Pick one canonical processing token so save can support either workflow:
+    # 1) reuse an existing process code, or
+    # 2) save with a freshly generated processing code.
+    resolved_processing_code = processing_code or process_code
+    # Save requires at least one of the two inputs so users are not blocked by mutually-exclusive messages.
+    if submit_action == "save" and not resolved_processing_code:
+        errors.append("Either Use Existing Process Code or Generate New Process Code is required.")
     # Return validation output and one canonical processing-code value used for duplicate checks and code preview.
-    return errors, processing_code
+    return errors, resolved_processing_code
 
 
 @router.get("/", response_class=HTMLResponse)
