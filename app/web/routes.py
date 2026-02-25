@@ -53,6 +53,25 @@ def _to_json_safe(value):
     return value
 
 
+def _resolve_conversion1_how_codes(process_code: str, processing_code: str, submit_action: str) -> tuple[list[str], str, str | None]:
+    # Track validation errors for process/processing inputs so the route can merge them with other field errors.
+    errors: list[str] = []
+    # Count how many of the mutually-exclusive inputs are populated by the user.
+    entered_code_count = int(bool(process_code)) + int(bool(processing_code))
+    # Enforce strict either/or behavior so only one of the two fields can be completed.
+    if entered_code_count > 1:
+        errors.append("Only one field can be completed: Process code or Processing code.")
+    # Require one code on save, while still allowing empty values during generate-only attempts.
+    if submit_action == "save" and entered_code_count == 0:
+        errors.append("Either Process code or Processing code is required.")
+    # Build one canonical processing code used for generated code text, duplicate checks, and persistence.
+    effective_processing_code = processing_code or process_code
+    # Preserve process_code only when processing_code is the active field, keeping saved rows mutually exclusive.
+    persisted_process_code = process_code if processing_code and process_code else None
+    # Return the computed validation result and canonical values back to the route handler.
+    return errors, effective_processing_code, persisted_process_code
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Build dashboard sections grouped into quality control and processing workstreams.
@@ -401,13 +420,21 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
     if not context_code:
         errors.append("Context code is required (dropdown or text entry).")
 
-    # Validate process code format when provided manually because save requires it.
+    # Validate process code format when present so both save and preview keep 2-letter alpha tokens only.
     if process_code and (len(process_code) != 2 or not process_code.isalpha()):
         errors.append("Process code must be a two-letter code like AB.")
 
-    # Validate processing code format when entered manually or generated from active rows.
+    # Validate processing code format when present so both save and preview keep 2-letter alpha tokens only.
     if processing_code and (len(processing_code) != 2 or not processing_code.isalpha()):
         errors.append("Processing code must be a two-letter code like AB.")
+
+    # Apply either/or validation and compute canonical persistence values for mutually-exclusive code entry.
+    code_errors, resolved_processing_code, persisted_process_code = _resolve_conversion1_how_codes(
+        process_code=process_code,
+        processing_code=processing_code,
+        submit_action=submit_action,
+    )
+    errors.extend(code_errors)
 
     # Validate failure mode selection against the same shared canonical source as pellet-bag workflows.
     if failure_mode and failure_mode not in failure_modes:
@@ -421,23 +448,18 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
 
     # Generate button only allocates next Processing Code for the selected/typed context code.
     if submit_action == "generate" and context_code and not errors:
-        processing_code = bigquery.get_next_conversion1_how_process_code(context_code=context_code, start_code="AB")
+        resolved_processing_code = bigquery.get_next_conversion1_how_process_code(context_code=context_code, start_code="AB")
 
-    # Build full code preview exactly as context code + one space + processing code.
-    generated_how_code = f"{context_code} {processing_code}".strip() if context_code and processing_code else ""
+    # Build full code preview exactly as context code + one space + the resolved effective processing code.
+    generated_how_code = f"{context_code} {resolved_processing_code}".strip() if context_code and resolved_processing_code else ""
 
-    # Save action validates required fields and applies default failure-mode behavior.
-    if submit_action == "save":
-        if not process_code:
-            errors.append("Process code is required.")
-        if not processing_code:
-            errors.append("Processing code is required.")
-        if not failure_mode:
-            # Default failure mode to N/A when user leaves it blank.
-            failure_mode = "N/A"
+    # Save action applies default failure-mode behavior only after field-level validation has passed.
+    if submit_action == "save" and not failure_mode:
+        # Default failure mode to N/A when user leaves it blank.
+        failure_mode = "N/A"
 
-    # Save action blocks duplicates when context_code + processing_code already exists as active.
-    if submit_action == "save" and not errors and bigquery.conversion1_how_processing_code_exists(context_code, processing_code):
+    # Save action blocks duplicates when context_code + effective processing_code already exists as active.
+    if submit_action == "save" and not errors and bigquery.conversion1_how_processing_code_exists(context_code, resolved_processing_code):
         errors.append("Processing code already exists for this context code. Please use a different processing code.")
 
     if submit_action == "save" and not errors:
@@ -447,7 +469,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
                 "conversion1_how_code": generated_how_code,
                 "context_code": context_code,
                 "process_code": process_code,
-                "processing_code": processing_code,
+                "processing_code": processing_code or resolved_processing_code,
                 "failure_mode": failure_mode,
                 "machine_setup_url": machine_setup_url or None,
                 "processed_data_url": processed_data_url or None,
@@ -467,8 +489,8 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             "errors": errors,
             "result": {
                 "conversion1_how_code": generated_how_code,
-                "process_code": process_code,
-                "processing_code": processing_code,
+                "process_code": persisted_process_code,
+                "processing_code": resolved_processing_code,
             } if generated_how_code else None,
             "rows": _to_json_safe(rows),
             "filters": {"q": ""},
@@ -483,7 +505,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
                 "context_code_select": context_code_select,
                 "context_code_manual": context_code_manual,
                 "process_code": process_code,
-                "processing_code": processing_code,
+                "processing_code": processing_code or resolved_processing_code,
                 "failure_mode": failure_mode,
                 "machine_setup_url": machine_setup_url,
                 "processed_data_url": processed_data_url,
