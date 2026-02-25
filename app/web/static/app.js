@@ -1945,6 +1945,25 @@ function attachConversion1ProductsPage() {
   const howSelect = document.getElementById('conversion1-products-how-select');
   const howManual = document.getElementById('conversion1-products-how-manual');
   const numberInput = document.getElementById('conversion1-products-number-of-records');
+  // Bind optional create-form controls so users can submit extra metadata during generation.
+  const notesInput = document.getElementById('conversion1-products-notes');
+  const storageLocationSelect = document.getElementById('conversion1-products-storage-location');
+  const numberUnitsProducedInput = document.getElementById('conversion1-products-number-units-produced');
+  const numberedInOrderSelect = document.getElementById('conversion1-products-numbered-in-order');
+  const tensileRigidStatusSelect = document.getElementById('conversion1-products-tensile-rigid-status');
+  const tensileFilmsStatusSelect = document.getElementById('conversion1-products-tensile-films-status');
+  const sealStrengthStatusSelect = document.getElementById('conversion1-products-seal-strength-status');
+  const shelfStabilityStatusSelect = document.getElementById('conversion1-products-shelf-stability-status');
+  const solubilityStatusSelect = document.getElementById('conversion1-products-solubility-status');
+  const defectAnalysisStatusSelect = document.getElementById('conversion1-products-defect-analysis-status');
+  const blockingStatusSelect = document.getElementById('conversion1-products-blocking-status');
+  const filmEmcStatusSelect = document.getElementById('conversion1-products-film-emc-status');
+  const frictionStatusSelect = document.getElementById('conversion1-products-friction-status');
+  const widthMmInput = document.getElementById('conversion1-products-width-mm');
+  const lengthMInput = document.getElementById('conversion1-products-length-m');
+  const avgFilmThicknessUmInput = document.getElementById('conversion1-products-avg-film-thickness-um');
+  const sdFilmThicknessInput = document.getElementById('conversion1-products-sd-film-thickness');
+  const filmThicknessVariationPercentInput = document.getElementById('conversion1-products-film-thickness-variation-percent');
   const filterInput = document.getElementById('conversion1-products-filter');
   const filterButton = document.getElementById('conversion1-products-filter-button');
 
@@ -1963,6 +1982,24 @@ function attachConversion1ProductsPage() {
     const manualValue = (howManual.value || '').trim().replace(/\s+/g, ' ');
     const selectValue = (howSelect.value || '').trim();
     return manualValue || selectValue;
+  }
+
+  function integerOrNull(value) {
+    // Convert optional integer fields into nullable numeric payload values.
+    if (value === null || value === undefined || value === '') return null;
+    return Number(value);
+  }
+
+  function numberOrNull(value) {
+    // Convert optional decimal fields into nullable numeric payload values.
+    if (value === null || value === undefined || value === '') return null;
+    return Number(value);
+  }
+
+  function boolOrNull(value) {
+    // Convert optional yes/no selects into nullable boolean payload values.
+    if (value === null || value === undefined || value === '') return null;
+    return value === 'true';
   }
 
   function showErrors(errors) {
@@ -2085,6 +2122,18 @@ function attachConversion1ProductsPage() {
     metaOptions.other_status_options = meta.other_status_options || [];
     metaOptions.tensile_status_options = meta.tensile_status_options || [];
 
+    // Hydrate create-form optional dropdowns from API metadata to match edit controls.
+    appendSelectOptions(storageLocationSelect, metaOptions.storage_location_options);
+    appendSelectOptions(tensileRigidStatusSelect, metaOptions.tensile_status_options);
+    appendSelectOptions(tensileFilmsStatusSelect, metaOptions.tensile_status_options);
+    appendSelectOptions(sealStrengthStatusSelect, metaOptions.other_status_options);
+    appendSelectOptions(shelfStabilityStatusSelect, metaOptions.other_status_options);
+    appendSelectOptions(solubilityStatusSelect, metaOptions.other_status_options);
+    appendSelectOptions(defectAnalysisStatusSelect, metaOptions.other_status_options);
+    appendSelectOptions(blockingStatusSelect, metaOptions.other_status_options);
+    appendSelectOptions(filmEmcStatusSelect, metaOptions.other_status_options);
+    appendSelectOptions(frictionStatusSelect, metaOptions.other_status_options);
+
     clearElement(howSelect);
     const defaultOption = document.createElement('option');
     defaultOption.value = '';
@@ -2200,14 +2249,12 @@ function attachConversion1ProductsPage() {
     decorateReusableTable(table, 0);
 
     const controls = document.createElement('div');
-    renderPageSizeControl({
-      container: controls,
-      currentSize: state.pageSize,
-      onChange: async (newSize) => {
-        state.pageSize = newSize;
-        state.page = 1;
-        await loadItems();
-      },
+    // Reuse the shared page-size selector helper already defined in this bundle.
+    ensurePageSizeSelector(controls, state.pageSize, async (newSize) => {
+      // Reset to first page whenever row density changes.
+      state.pageSize = newSize;
+      state.page = 1;
+      await loadItems();
     });
     const prev = document.createElement('button');
     prev.type = 'button';
@@ -2244,8 +2291,35 @@ function attachConversion1ProductsPage() {
     status.textContent = 'Creating...';
     try {
       const created = await postJson('/api/conversion1_products', {
+        // Required code prefix for generated product codes.
         conversion1_how_code: howCode,
+        // Required count controls number of rows created in one request.
         number_of_records: numberOfRecords,
+        // Optional free-text note metadata.
+        notes: (notesInput.value || '').trim() || null,
+        // Optional constrained dropdown metadata.
+        storage_location: (storageLocationSelect.value || '').trim() || null,
+        // Optional nullable integer and boolean metadata fields.
+        number_units_produced: integerOrNull(numberUnitsProducedInput.value),
+        numbered_in_order: boolOrNull(numberedInOrderSelect.value),
+        // Optional tensile-status metadata fields.
+        tensile_rigid_status: (tensileRigidStatusSelect.value || '').trim() || null,
+        tensile_films_status: (tensileFilmsStatusSelect.value || '').trim() || null,
+        // Optional non-tensile status metadata fields.
+        seal_strength_status: (sealStrengthStatusSelect.value || '').trim() || null,
+        shelf_stability_status: (shelfStabilityStatusSelect.value || '').trim() || null,
+        solubility_status: (solubilityStatusSelect.value || '').trim() || null,
+        defect_analysis_status: (defectAnalysisStatusSelect.value || '').trim() || null,
+        blocking_status: (blockingStatusSelect.value || '').trim() || null,
+        film_emc_status: (filmEmcStatusSelect.value || '').trim() || null,
+        friction_status: (frictionStatusSelect.value || '').trim() || null,
+        // Optional nullable integer dimensional metadata fields.
+        width_mm: integerOrNull(widthMmInput.value),
+        length_m: integerOrNull(lengthMInput.value),
+        avg_film_thickness_um: integerOrNull(avgFilmThicknessUmInput.value),
+        // Optional nullable decimal film-thickness analytics metadata fields.
+        sd_film_thickness: numberOrNull(sdFilmThicknessInput.value),
+        film_thickness_variation_percent: numberOrNull(filmThicknessVariationPercentInput.value),
       });
       status.textContent = `Created ${created.items?.length || 0} product(s).`;
       renderCreatedCodes(created.items || []);

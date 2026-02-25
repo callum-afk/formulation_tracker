@@ -21,6 +21,81 @@
         <input id="conversion1-products-number-of-records" name="number_of_records" type="number" min="1" max="200" value="1" required />
       </label>
     </div>
+
+    <!-- Optional creation fields are collapsed by default and can be expanded when needed. -->
+    <details>
+      <summary>Optional fields</summary>
+      <div class="grid">
+        <!-- Optional notes field allows free-text context without affecting code generation. -->
+        <label>Notes
+          <textarea id="conversion1-products-notes" name="notes"></textarea>
+        </label>
+        <!-- Optional storage-location field maps to backend constrained dropdown options. -->
+        <label>Storage Location
+          <select id="conversion1-products-storage-location" name="storage_location"></select>
+        </label>
+        <!-- Optional integer-only units produced field supports nullable values. -->
+        <label>Number of units produced
+          <input id="conversion1-products-number-units-produced" name="number_units_produced" type="number" step="1" />
+        </label>
+        <!-- Optional yes/no workflow marker remains nullable when no value is selected. -->
+        <label>Numbered in Order (Yes No)
+          <select id="conversion1-products-numbered-in-order" name="numbered_in_order">
+            <option value="">Select</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+        <!-- Optional tensile-rigid status uses dedicated tensile-status metadata options. -->
+        <label>Tensile (Rigid) status
+          <select id="conversion1-products-tensile-rigid-status" name="tensile_rigid_status"></select>
+        </label>
+        <!-- Optional tensile-films status uses dedicated tensile-status metadata options. -->
+        <label>Tensile (Films) status
+          <select id="conversion1-products-tensile-films-status" name="tensile_films_status"></select>
+        </label>
+        <!-- Optional shared status fields reuse non-tensile metadata options for consistency. -->
+        <label>Seal Strength status
+          <select id="conversion1-products-seal-strength-status" name="seal_strength_status"></select>
+        </label>
+        <label>Shelf Stability status
+          <select id="conversion1-products-shelf-stability-status" name="shelf_stability_status"></select>
+        </label>
+        <label>Solubility status
+          <select id="conversion1-products-solubility-status" name="solubility_status"></select>
+        </label>
+        <label>Defect analysis status
+          <select id="conversion1-products-defect-analysis-status" name="defect_analysis_status"></select>
+        </label>
+        <label>Blocking status
+          <select id="conversion1-products-blocking-status" name="blocking_status"></select>
+        </label>
+        <label>Film EMC percent status
+          <select id="conversion1-products-film-emc-status" name="film_emc_status"></select>
+        </label>
+        <label>Friction status
+          <select id="conversion1-products-friction-status" name="friction_status"></select>
+        </label>
+        <!-- Optional integer-only dimensional fields support nullable values. -->
+        <label>Width mm
+          <input id="conversion1-products-width-mm" name="width_mm" type="number" step="1" />
+        </label>
+        <label>Length m
+          <input id="conversion1-products-length-m" name="length_m" type="number" step="1" />
+        </label>
+        <label>Average Film Thickness um
+          <input id="conversion1-products-avg-film-thickness-um" name="avg_film_thickness_um" type="number" step="1" />
+        </label>
+        <!-- Optional decimal film-thickness analytics fields support nullable values. -->
+        <label>SD Film Thickness
+          <input id="conversion1-products-sd-film-thickness" name="sd_film_thickness" type="number" step="any" />
+        </label>
+        <label>Percent variation Film Thickness
+          <input id="conversion1-products-film-thickness-variation-percent" name="film_thickness_variation_percent" type="number" step="any" />
+        </label>
+      </div>
+    </details>
+
     <!-- Generate action creates one or many rows with globally sequenced 4-digit suffixes. -->
     <button type="submit">Generate Product Codes</button>
   </form>

@@ -1196,7 +1196,19 @@ class BigQueryService:
                 return start_suffix
         raise RuntimeError("Failed to allocate conversion1 product suffix range after retries")
 
-    def create_conversion1_products(self, how_code: str, n: int, created_by: Optional[str]) -> List[Dict[str, Any]]:
+    def create_conversion1_products(
+        self,
+        how_code: str,
+        n: int,
+        created_by: Optional[str],
+        optional_fields: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        # Normalize optional payload values so create requests can prefill editable fields.
+        optional_fields = optional_fields or {}
+        # Apply create defaults for status fields when optional values are not provided.
+        tensile_default = optional_fields.get("tensile_rigid_status") or "Not Requested"
+        tensile_films_default = optional_fields.get("tensile_films_status") or tensile_default
+        other_default = "Not Requested"
         # Reserve global suffixes once and insert one row per generated product code.
         start_suffix = self.allocate_conversion1_product_suffix_range(n)
         created_items: List[Dict[str, Any]] = []
@@ -1210,17 +1222,36 @@ class BigQueryService:
                 "tensile_rigid_status, tensile_films_status, seal_strength_status, shelf_stability_status, solubility_status, "
                 "defect_analysis_status, blocking_status, film_emc_status, friction_status, width_mm, length_m, avg_film_thickness_um, "
                 "sd_film_thickness, film_thickness_variation_percent, created_at, created_by, updated_at, updated_by, is_active) "
-                "SELECT @product_code, @conversion1_how_code, @product_suffix, NULL, NULL, NULL, NULL, "
-                "@tensile_default, @tensile_default, @other_default, @other_default, @other_default, "
-                "@other_default, @other_default, @other_default, @other_default, NULL, NULL, NULL, "
-                "NULL, NULL, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @updated_by, TRUE "
+                "SELECT @product_code, @conversion1_how_code, @product_suffix, @storage_location, @notes, @number_units_produced, @numbered_in_order, "
+                "@tensile_rigid_status, @tensile_films_status, @seal_strength_status, @shelf_stability_status, @solubility_status, "
+                "@defect_analysis_status, @blocking_status, @film_emc_status, @friction_status, @width_mm, @length_m, @avg_film_thickness_um, "
+                "@sd_film_thickness, @film_thickness_variation_percent, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @updated_by, TRUE "
                 f"WHERE NOT EXISTS (SELECT 1 FROM `{self.dataset}.conversion1_products` WHERE product_code = @product_code)",
                 [
+                    # Bind identity and generated code fields.
                     bigquery.ScalarQueryParameter("product_code", "STRING", product_code),
                     bigquery.ScalarQueryParameter("conversion1_how_code", "STRING", how_code),
                     bigquery.ScalarQueryParameter("product_suffix", "STRING", suffix),
-                    bigquery.ScalarQueryParameter("tensile_default", "STRING", "Not Requested"),
-                    bigquery.ScalarQueryParameter("other_default", "STRING", "Not Requested"),
+                    # Bind optional create-form values so records can be prefilled at creation time.
+                    bigquery.ScalarQueryParameter("storage_location", "STRING", optional_fields.get("storage_location")),
+                    bigquery.ScalarQueryParameter("notes", "STRING", optional_fields.get("notes")),
+                    bigquery.ScalarQueryParameter("number_units_produced", "INT64", optional_fields.get("number_units_produced")),
+                    bigquery.ScalarQueryParameter("numbered_in_order", "BOOL", optional_fields.get("numbered_in_order")),
+                    bigquery.ScalarQueryParameter("tensile_rigid_status", "STRING", optional_fields.get("tensile_rigid_status") or tensile_default),
+                    bigquery.ScalarQueryParameter("tensile_films_status", "STRING", optional_fields.get("tensile_films_status") or tensile_films_default),
+                    bigquery.ScalarQueryParameter("seal_strength_status", "STRING", optional_fields.get("seal_strength_status") or other_default),
+                    bigquery.ScalarQueryParameter("shelf_stability_status", "STRING", optional_fields.get("shelf_stability_status") or other_default),
+                    bigquery.ScalarQueryParameter("solubility_status", "STRING", optional_fields.get("solubility_status") or other_default),
+                    bigquery.ScalarQueryParameter("defect_analysis_status", "STRING", optional_fields.get("defect_analysis_status") or other_default),
+                    bigquery.ScalarQueryParameter("blocking_status", "STRING", optional_fields.get("blocking_status") or other_default),
+                    bigquery.ScalarQueryParameter("film_emc_status", "STRING", optional_fields.get("film_emc_status") or other_default),
+                    bigquery.ScalarQueryParameter("friction_status", "STRING", optional_fields.get("friction_status") or other_default),
+                    bigquery.ScalarQueryParameter("width_mm", "INT64", optional_fields.get("width_mm")),
+                    bigquery.ScalarQueryParameter("length_m", "INT64", optional_fields.get("length_m")),
+                    bigquery.ScalarQueryParameter("avg_film_thickness_um", "INT64", optional_fields.get("avg_film_thickness_um")),
+                    bigquery.ScalarQueryParameter("sd_film_thickness", "FLOAT64", optional_fields.get("sd_film_thickness")),
+                    bigquery.ScalarQueryParameter("film_thickness_variation_percent", "FLOAT64", optional_fields.get("film_thickness_variation_percent")),
+                    # Bind actor fields for audit metadata.
                     bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
                     bigquery.ScalarQueryParameter("updated_by", "STRING", created_by),
                 ],

@@ -216,6 +216,42 @@ class Conversion1ProductCreate(BaseModel):
     conversion1_how_code: str
     # Allow controlled bulk creation while preventing accidental large fan-out submits.
     number_of_records: int = Field(default=1, ge=1, le=200)
+    # Optional storage-location dropdown value from one constrained option list.
+    storage_location: Optional[str] = None
+    # Optional free-text notes value.
+    notes: Optional[str] = None
+    # Optional integer production count value.
+    number_units_produced: Optional[int] = None
+    # Optional boolean yes/no workflow marker.
+    numbered_in_order: Optional[bool] = None
+    # Optional tensile-specific status using dedicated tensile enum options.
+    tensile_rigid_status: Optional[str] = None
+    # Optional tensile-specific status using dedicated tensile enum options.
+    tensile_films_status: Optional[str] = None
+    # Optional shared status field for seal strength progress.
+    seal_strength_status: Optional[str] = None
+    # Optional shared status field for shelf stability progress.
+    shelf_stability_status: Optional[str] = None
+    # Optional shared status field for solubility progress.
+    solubility_status: Optional[str] = None
+    # Optional shared status field for defect analysis progress.
+    defect_analysis_status: Optional[str] = None
+    # Optional shared status field for blocking progress.
+    blocking_status: Optional[str] = None
+    # Optional shared status field for film EMC progress.
+    film_emc_status: Optional[str] = None
+    # Optional shared status field for friction progress.
+    friction_status: Optional[str] = None
+    # Optional integer-only film width value.
+    width_mm: Optional[int] = None
+    # Optional integer-only film length value.
+    length_m: Optional[int] = None
+    # Optional integer-only average film thickness value.
+    avg_film_thickness_um: Optional[int] = None
+    # Optional decimal SD film thickness value.
+    sd_film_thickness: Optional[float] = None
+    # Optional decimal film thickness variation percentage value.
+    film_thickness_variation_percent: Optional[float] = None
 
     @validator("conversion1_how_code", pre=True)
     def validate_conversion1_how_code(cls, value: str) -> str:

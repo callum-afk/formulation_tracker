@@ -39,6 +39,38 @@ class Conversion1ProductsTests(unittest.TestCase):
         self.assertEqual(created[0]["product_code"], "EV AB 0042")
         self.assertEqual(created[1]["product_code"], "EV AB 0043")
 
+    def test_create_conversion1_products_accepts_optional_prefill_fields(self) -> None:
+        # Verify create path forwards optional prefill values and keeps defaults for blank statuses.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+        service.allocate_conversion1_product_suffix_range = MagicMock(return_value=7)
+
+        fake_job = MagicMock()
+        fake_job.result.return_value = None
+        service._run = MagicMock(return_value=fake_job)
+
+        service.create_conversion1_products(
+            "EV AB",
+            1,
+            "tester@notpla.com",
+            optional_fields={
+                "notes": "sample note",
+                "number_units_produced": 10,
+                "tensile_rigid_status": "Ready",
+            },
+        )
+
+        # Inspect first insert call parameters to confirm optional field bindings are populated.
+        first_call_kwargs = service._run.call_args_list[0][0]
+        query_parameters = first_call_kwargs[1]
+        parameter_map = {parameter.name: parameter.value for parameter in query_parameters}
+        self.assertEqual(parameter_map["notes"], "sample note")
+        self.assertEqual(parameter_map["number_units_produced"], 10)
+        self.assertEqual(parameter_map["tensile_rigid_status"], "Ready")
+        # Confirm non-provided film tensile status inherits the tensile default fallback.
+        self.assertEqual(parameter_map["tensile_films_status"], "Ready")
+
 
 if __name__ == "__main__":
     unittest.main()
