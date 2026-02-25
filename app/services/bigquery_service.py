@@ -1035,55 +1035,56 @@ class BigQueryService:
         # Return canonical failure modes from one shared constant used by pellet-bag and conversion workflows.
         return list(FAILURE_MODES)
 
-    def get_next_conversion1_how_process_code(self, start_code: str = "AB") -> str:
-        # Derive the next process code from persisted Conversion 1 How submissions only.
+    def get_next_conversion1_how_process_code(self, context_code: Optional[str] = None, start_code: str = "AB") -> str:
+        # Derive the next processing code from persisted Conversion 1 How submissions only.
+        where = ["is_active = TRUE", "processing_code IS NOT NULL"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        # Scope generation to one context_code when provided so per-context sequences remain independent.
+        if context_code:
+            where.append("context_code = @context_code")
+            params.append(bigquery.ScalarQueryParameter("context_code", "STRING", context_code))
         query = (
-            f"SELECT process_code FROM `{self.dataset}.conversion1_how` "
-            "WHERE is_active = TRUE AND process_code IS NOT NULL "
-            "ORDER BY created_at DESC LIMIT 2000"
+            f"SELECT processing_code FROM `{self.dataset}.conversion1_how` "
+            f"WHERE {' AND '.join(where)} "
+            "ORDER BY created_at DESC LIMIT 5000"
         )
-        rows = [dict(row) for row in self._run(query, []).result()]
-        highest_value = code_to_int(start_code)
+        rows = [dict(row) for row in self._run(query, params).result()]
+        # Track the highest seen numeric code value and increment from that value.
+        highest_value = code_to_int(start_code) - 1
         for row in rows:
-            process_code = str(row.get("process_code") or "").strip().upper()
-            if not process_code:
+            processing_code = str(row.get("processing_code") or "").strip().upper()
+            if not processing_code:
                 continue
             try:
-                highest_value = max(highest_value, code_to_int(process_code))
+                highest_value = max(highest_value, code_to_int(processing_code))
             except ValueError:
                 continue
-        if not rows:
-            return start_code
         return int_to_code(highest_value + 1)
 
-    def create_or_update_conversion1_how(self, entry: Dict[str, Any]) -> None:
-        # Upsert Conversion 1 How rows by code so duplicate submissions update deterministically via MERGE.
+    def conversion1_how_processing_code_exists(self, context_code: str, processing_code: str) -> bool:
+        # Enforce per-context uniqueness so one context cannot reuse the same processing code.
         query = (
-            f"MERGE `{self.dataset}.conversion1_how` AS target "
-            "USING ("
-            "SELECT @conversion1_how_code AS conversion1_how_code, @context_code AS context_code, "
-            "@process_code AS process_code, @processing_code AS processing_code, @failure_mode AS failure_mode, "
-            "@machine_setup_url AS machine_setup_url, @processed_data_url AS processed_data_url, "
-            "@created_by AS created_by"
-            ") AS source "
-            "ON target.conversion1_how_code = source.conversion1_how_code "
-            "WHEN MATCHED THEN UPDATE SET "
-            "target.context_code = source.context_code, "
-            "target.process_code = source.process_code, "
-            "target.processing_code = source.processing_code, "
-            "target.failure_mode = source.failure_mode, "
-            "target.machine_setup_url = source.machine_setup_url, "
-            "target.processed_data_url = source.processed_data_url, "
-            "target.updated_at = CURRENT_TIMESTAMP(), "
-            "target.updated_by = source.created_by, "
-            "target.is_active = TRUE "
-            "WHEN NOT MATCHED THEN INSERT ("
+            f"SELECT 1 FROM `{self.dataset}.conversion1_how` "
+            "WHERE context_code = @context_code "
+            "AND processing_code = @processing_code "
+            "AND is_active = TRUE LIMIT 1"
+        )
+        params = [
+            bigquery.ScalarQueryParameter("context_code", "STRING", context_code),
+            bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code),
+        ]
+        rows = list(self._run(query, params).result())
+        return bool(rows)
+
+    def create_or_update_conversion1_how(self, entry: Dict[str, Any]) -> None:
+        # Insert a new Conversion 1 How row after route-level validation and duplicate checks complete.
+        query = (
+            f"INSERT `{self.dataset}.conversion1_how` ("
             "conversion1_how_code, context_code, process_code, processing_code, failure_mode, machine_setup_url, "
             "processed_data_url, created_at, created_by, updated_at, updated_by, is_active"
             ") VALUES ("
-            "source.conversion1_how_code, source.context_code, source.process_code, source.processing_code, source.failure_mode, "
-            "source.machine_setup_url, source.processed_data_url, CURRENT_TIMESTAMP(), source.created_by, "
-            "CURRENT_TIMESTAMP(), source.created_by, TRUE"
+            "@conversion1_how_code, @context_code, @process_code, @processing_code, @failure_mode, @machine_setup_url, "
+            "@processed_data_url, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @created_by, TRUE"
             ")"
         )
         self._run(
