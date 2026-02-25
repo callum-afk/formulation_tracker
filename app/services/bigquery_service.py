@@ -1078,18 +1078,25 @@ class BigQueryService:
 
     def create_or_update_conversion1_how(self, entry: Dict[str, Any]) -> None:
         # Insert a new Conversion 1 How row after route-level validation and duplicate checks complete.
+        #
+        # NOTE: The table currently contains some legacy REQUIRED columns (how_code, process_id, process_code).
+        # To keep backwards compatibility (and avoid Cloud Run startup failures), we populate them here.
         query = (
             f"INSERT `{self.dataset}.conversion1_how` ("
-            "conversion1_how_code, context_code, process_code, processing_code, failure_mode, machine_setup_url, "
-            "processed_data_url, created_at, created_by, updated_at, updated_by, is_active"
+            "how_code, process_id, conversion1_how_code, context_code, process_code, processing_code, "
+            "failure_mode, machine_setup_url, processed_data_url, setup_link, processed_data_link, "
+            "created_at, created_by, updated_at, updated_by, is_active"
             ") VALUES ("
-            "@conversion1_how_code, @context_code, @process_code, @processing_code, @failure_mode, @machine_setup_url, "
-            "@processed_data_url, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @created_by, TRUE"
+            "@how_code, @process_id, @conversion1_how_code, @context_code, @process_code, @processing_code, "
+            "@failure_mode, @machine_setup_url, @processed_data_url, @setup_link, @processed_data_link, "
+            "CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @created_by, TRUE"
             ")"
         )
         self._run(
             query,
             [
+                bigquery.ScalarQueryParameter("how_code", "STRING", entry["conversion1_how_code"]),
+                bigquery.ScalarQueryParameter("process_id", "STRING", entry["conversion1_how_code"]),
                 bigquery.ScalarQueryParameter("conversion1_how_code", "STRING", entry["conversion1_how_code"]),
                 bigquery.ScalarQueryParameter("context_code", "STRING", entry["context_code"]),
                 bigquery.ScalarQueryParameter("process_code", "STRING", entry.get("process_code")),
@@ -1097,6 +1104,9 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("failure_mode", "STRING", entry.get("failure_mode")),
                 bigquery.ScalarQueryParameter("machine_setup_url", "STRING", entry.get("machine_setup_url")),
                 bigquery.ScalarQueryParameter("processed_data_url", "STRING", entry.get("processed_data_url")),
+                # Maintain legacy link fields too (some older UI code may read these).
+                bigquery.ScalarQueryParameter("setup_link", "STRING", entry.get("machine_setup_url")),
+                bigquery.ScalarQueryParameter("processed_data_link", "STRING", entry.get("processed_data_url")),
                 bigquery.ScalarQueryParameter("created_by", "STRING", entry.get("created_by")),
             ],
         ).result()
