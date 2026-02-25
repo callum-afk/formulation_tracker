@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -14,6 +15,19 @@ router = APIRouter()
 
 templates = Jinja2Templates(directory="app/web/templates")
 
+
+
+
+def _is_google_drive_url(url: str) -> bool:
+    # Restrict external links to common Google Drive/Docs hostnames expected for machine/process files.
+    if not url:
+        return True
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.netloc or "").lower()
+    allowed_hosts = {"drive.google.com", "docs.google.com", "sheets.google.com"}
+    return host in allowed_hosts or host.endswith(".google.com")
 
 def _to_json_safe(value):
     # Recursively convert nested values (including datetimes/dates/Decimals) into JSON-safe primitives for Jinja tojson.
@@ -318,6 +332,151 @@ async def conversion1_context_submit(request: Request, bigquery: BigQueryService
             "partner_machine_options": partner_machine_options,
         },
         status_code=400 if errors else 200,
+    )
+
+
+@router.get("/conversion1/how", response_class=HTMLResponse)
+async def conversion1_how_page(
+    request: Request,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> HTMLResponse:
+    # Clamp pagination arguments so browsing remains bounded and consistent with global limits.
+    safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
+    safe_page = max(1, page)
+    # Load newest Conversion 1 How entries and optional filter state for table rendering.
+    rows, total = bigquery.list_conversion1_how_entries(search=(q or "").strip() or None, page=safe_page, page_size=safe_page_size)
+    # Load active context codes so users can either select an existing code or paste one manually.
+    context_rows, _ = bigquery.list_conversion1_codes_paginated(search=None, page=1, page_size=MAX_PAGE_SIZE)
+    context_codes = [str(row.get("conversion_code") or "").strip() for row in context_rows if str(row.get("conversion_code") or "").strip()]
+    return templates.TemplateResponse(
+        "conversion1_how.html",
+        {
+            "request": request,
+            "title": "Conversion 1",
+            "section_header": "How",
+            "errors": [],
+            "result": None,
+            "rows": _to_json_safe(rows),
+            "filters": {"q": q or ""},
+            "pagination": {
+                "page": safe_page,
+                "page_size": safe_page_size,
+                "total": total,
+                "has_prev": safe_page > 1,
+                "has_next": safe_page * safe_page_size < total,
+            },
+            "form_data": {},
+            "context_codes": context_codes,
+            "failure_modes": bigquery.get_failure_modes(),
+        },
+    )
+
+
+@router.post("/conversion1/how", response_class=HTMLResponse)
+async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Parse and normalize form values including both context-code input variants.
+    form = await request.form()
+    context_code_select = " ".join(str(form.get("context_code_select", "")).strip().split())
+    context_code_manual = " ".join(str(form.get("context_code_manual", "")).strip().split())
+    process_code = str(form.get("process_code", "")).strip().upper()
+    failure_mode = str(form.get("failure_mode", "")).strip()
+    machine_setup_url = str(form.get("machine_setup_url", "")).strip()
+    processed_data_url = str(form.get("processed_data_url", "")).strip()
+    submit_action = str(form.get("submit_action", "generate")).strip().lower()
+
+    # Resolve one canonical context code from manual text first, then dropdown fallback.
+    context_code = context_code_manual or context_code_select
+    errors: list[str] = []
+    # Re-hydrate dropdown options and table state for full-page re-render in both success and error flows.
+    context_rows, _ = bigquery.list_conversion1_codes_paginated(search=None, page=1, page_size=MAX_PAGE_SIZE)
+    context_codes = [str(row.get("conversion_code") or "").strip() for row in context_rows if str(row.get("conversion_code") or "").strip()]
+    failure_modes = bigquery.get_failure_modes()
+
+    # Validate required context code and ensure the full code already exists in Conversion 1 Context storage.
+    if not context_code:
+        errors.append("Context code is required (dropdown or text entry).")
+    elif not bigquery.conversion1_context_exists(context_code):
+        errors.append("Context code was not found. Please use an existing full context code.")
+
+    # Validate process code format when provided manually.
+    if process_code and (len(process_code) != 2 or not process_code.isalpha()):
+        errors.append("Process code must be a two-letter code like AB.")
+
+    # Validate failure mode selection against the same shared canonical source as pellet-bag workflows.
+    if failure_mode and failure_mode not in failure_modes:
+        errors.append("Failure mode must be selected from the allowed list.")
+
+    # Validate external links as Google Drive/Docs URLs only.
+    if machine_setup_url and not _is_google_drive_url(machine_setup_url):
+        errors.append("Machine Setup File URL must be a valid Google Drive/Docs link.")
+    if processed_data_url and not _is_google_drive_url(processed_data_url):
+        errors.append("Processed Data File URL must be a valid Google Drive/Docs link.")
+
+    # Determine generated process code from persisted rows only so repeated Generate clicks stay stable until save.
+    generated_process_code = process_code or bigquery.get_next_conversion1_how_process_code(start_code="AB")
+    # Build processing/how code exactly as context code + one space + process code.
+    generated_how_code = f"{context_code} {generated_process_code}".strip() if context_code else ""
+
+    # Save action requires failure mode and generated code, then upserts to BigQuery.
+    if submit_action == "save" and not errors:
+        if not failure_mode:
+            errors.append("Failure mode is required to save Conversion How.")
+        if not generated_how_code:
+            errors.append("Conversion 1 How code could not be generated.")
+
+    if submit_action == "save" and not errors:
+        # Persist Conversion 1 How row with deterministic merge semantics and signed-in owner metadata.
+        bigquery.create_or_update_conversion1_how(
+            {
+                "conversion1_how_code": generated_how_code,
+                "context_code": context_code,
+                "process_code": generated_process_code,
+                "processing_code": generated_how_code,
+                "failure_mode": failure_mode,
+                "machine_setup_url": machine_setup_url or None,
+                "processed_data_url": processed_data_url or None,
+                "created_by": request.state.user_email,
+            }
+        )
+
+    # Reload first page after submit so newest save appears immediately and pagination resets predictably.
+    rows, total = bigquery.list_conversion1_how_entries(search=None, page=1, page_size=DEFAULT_PAGE_SIZE)
+    status_code = 400 if errors else 200
+    return templates.TemplateResponse(
+        "conversion1_how.html",
+        {
+            "request": request,
+            "title": "Conversion 1",
+            "section_header": "How",
+            "errors": errors,
+            "result": {
+                "conversion1_how_code": generated_how_code,
+                "process_code": generated_process_code,
+            } if generated_how_code else None,
+            "rows": _to_json_safe(rows),
+            "filters": {"q": ""},
+            "pagination": {
+                "page": 1,
+                "page_size": DEFAULT_PAGE_SIZE,
+                "total": total,
+                "has_prev": False,
+                "has_next": DEFAULT_PAGE_SIZE < total,
+            },
+            "form_data": {
+                "context_code_select": context_code_select,
+                "context_code_manual": context_code_manual,
+                "process_code": generated_process_code,
+                "failure_mode": failure_mode,
+                "machine_setup_url": machine_setup_url,
+                "processed_data_url": processed_data_url,
+            },
+            "context_codes": context_codes,
+            "failure_modes": failure_modes,
+        },
+        status_code=status_code,
     )
 
 
