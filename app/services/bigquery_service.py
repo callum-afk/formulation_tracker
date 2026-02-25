@@ -116,6 +116,8 @@ class BigQueryService:
             "pellet_bag_assignees": {"email", "is_active", "created_at", "created_by"},
             "conversion1_context": {"context_code", "pellet_bag_code", "partner_code", "machine_code", "date_yymmdd", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
             "conversion1_how": {"conversion1_how_code", "context_code", "process_code", "processing_code", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
+            "conversion1_products": {"product_code", "conversion1_how_code", "product_suffix", "storage_location", "notes", "number_units_produced", "numbered_in_order", "tensile_rigid_status", "tensile_films_status", "seal_strength_status", "shelf_stability_status", "solubility_status", "defect_analysis_status", "blocking_status", "film_emc_status", "friction_status", "width_mm", "length_m", "avg_film_thickness_um", "sd_film_thickness", "film_thickness_variation_percent", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
+            "conversion1_product_counter": {"id", "next_suffix", "updated_at"},
         }
 
         # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
@@ -1145,6 +1147,163 @@ class BigQueryService:
         ]
         rows = [dict(row) for row in self._run(query, data_params).result()]
         return rows, total
+
+    def list_conversion1_how_codes(self) -> List[str]:
+        # Return unique active Conversion 1 How codes for product-create dropdown validation.
+        query = (
+            f"SELECT DISTINCT conversion1_how_code FROM `{self.dataset}.conversion1_how` "
+            "WHERE is_active = TRUE AND conversion1_how_code IS NOT NULL AND TRIM(conversion1_how_code) != '' "
+            "ORDER BY conversion1_how_code DESC"
+        )
+        rows = self._run(query, []).result()
+        return [str(row["conversion1_how_code"]).strip() for row in rows if row.get("conversion1_how_code")]
+
+    def conversion1_how_exists(self, code: str) -> bool:
+        # Validate create requests by checking an active row exists for the selected/pasted how code.
+        query = (
+            f"SELECT 1 FROM `{self.dataset}.conversion1_how` "
+            "WHERE conversion1_how_code = @code AND is_active = TRUE LIMIT 1"
+        )
+        rows = list(self._run(query, [bigquery.ScalarQueryParameter("code", "STRING", code)]).result())
+        return bool(rows)
+
+    def allocate_conversion1_product_suffix_range(self, count: int) -> int:
+        # Atomically reserve a contiguous block of global 4-digit suffix values from the dedicated counter row.
+        if count < 1:
+            raise ValueError("count must be >= 1")
+        for _ in range(20):
+            merge_job = self._run(
+                f"MERGE `{self.dataset}.conversion1_product_counter` T "
+                "USING (SELECT 'global' AS id, 0 AS seed) S "
+                "ON T.id = S.id "
+                "WHEN NOT MATCHED THEN "
+                "  INSERT (id, next_suffix, updated_at) VALUES (S.id, S.seed, CURRENT_TIMESTAMP()) "
+                "WHEN MATCHED THEN "
+                "  UPDATE SET updated_at = CURRENT_TIMESTAMP()",
+                [],
+            )
+            merge_job.result()
+            select_rows = list(
+                self._run(
+                    f"SELECT next_suffix FROM `{self.dataset}.conversion1_product_counter` WHERE id = 'global'",
+                    [],
+                ).result()
+            )
+            if not select_rows:
+                continue
+            start_suffix = int(select_rows[0]["next_suffix"])
+            update_job = self._run(
+                f"UPDATE `{self.dataset}.conversion1_product_counter` "
+                "SET next_suffix = @next_suffix, updated_at = CURRENT_TIMESTAMP() "
+                "WHERE id = 'global' AND next_suffix = @expected_next_suffix",
+                [
+                    bigquery.ScalarQueryParameter("next_suffix", "INT64", start_suffix + count),
+                    bigquery.ScalarQueryParameter("expected_next_suffix", "INT64", start_suffix),
+                ],
+            )
+            update_job.result()
+            if update_job.num_dml_affected_rows == 1:
+                return start_suffix
+        raise RuntimeError("Failed to allocate conversion1 product suffix range after retries")
+
+    def create_conversion1_products(self, how_code: str, n: int, created_by: Optional[str]) -> List[Dict[str, Any]]:
+        # Reserve global suffixes once and insert one row per generated product code.
+        start_suffix = self.allocate_conversion1_product_suffix_range(n)
+        created_items: List[Dict[str, Any]] = []
+        for offset in range(n):
+            suffix_int = start_suffix + offset
+            suffix = f"{suffix_int:04d}"
+            product_code = f"{how_code} {suffix}".strip()
+            self._run(
+                f"INSERT `{self.dataset}.conversion1_products` "
+                "(product_code, conversion1_how_code, product_suffix, storage_location, notes, number_units_produced, numbered_in_order, "
+                "tensile_rigid_status, tensile_films_status, seal_strength_status, shelf_stability_status, solubility_status, "
+                "defect_analysis_status, blocking_status, film_emc_status, friction_status, width_mm, length_m, avg_film_thickness_um, "
+                "sd_film_thickness, film_thickness_variation_percent, created_at, created_by, updated_at, updated_by, is_active) "
+                "SELECT @product_code, @conversion1_how_code, @product_suffix, NULL, NULL, NULL, NULL, "
+                "@tensile_default, @tensile_default, @other_default, @other_default, @other_default, "
+                "@other_default, @other_default, @other_default, @other_default, NULL, NULL, NULL, "
+                "NULL, NULL, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @updated_by, TRUE "
+                f"WHERE NOT EXISTS (SELECT 1 FROM `{self.dataset}.conversion1_products` WHERE product_code = @product_code)",
+                [
+                    bigquery.ScalarQueryParameter("product_code", "STRING", product_code),
+                    bigquery.ScalarQueryParameter("conversion1_how_code", "STRING", how_code),
+                    bigquery.ScalarQueryParameter("product_suffix", "STRING", suffix),
+                    bigquery.ScalarQueryParameter("tensile_default", "STRING", "Not Requested"),
+                    bigquery.ScalarQueryParameter("other_default", "STRING", "Not Requested"),
+                    bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
+                    bigquery.ScalarQueryParameter("updated_by", "STRING", created_by),
+                ],
+            ).result()
+            created_items.append({"product_code": product_code, "conversion1_how_code": how_code, "product_suffix": suffix})
+        return created_items
+
+    def list_conversion1_products(self, search: Optional[str], page: int, page_size: int) -> Tuple[List[Dict[str, Any]], int]:
+        # Return active product rows newest-first with optional product-code substring filtering.
+        where: List[str] = ["is_active = TRUE"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        if search:
+            where.append("CONTAINS_SUBSTR(product_code, @search)")
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", search))
+        where_clause = "WHERE " + " AND ".join(where)
+
+        count_rows = list(self._run(f"SELECT COUNT(1) AS total FROM `{self.dataset}.conversion1_products` {where_clause}", params).result())
+        total = int(count_rows[0]["total"]) if count_rows else 0
+        offset = max(page - 1, 0) * page_size
+
+        query = (
+            "SELECT product_code, conversion1_how_code, product_suffix, storage_location, notes, number_units_produced, numbered_in_order, "
+            "tensile_rigid_status, tensile_films_status, seal_strength_status, shelf_stability_status, solubility_status, "
+            "defect_analysis_status, blocking_status, film_emc_status, friction_status, width_mm, length_m, avg_film_thickness_um, "
+            "sd_film_thickness, film_thickness_variation_percent, created_at, created_by, updated_at, updated_by "
+            f"FROM `{self.dataset}.conversion1_products` {where_clause} "
+            "ORDER BY created_at DESC, product_suffix DESC LIMIT @limit OFFSET @offset"
+        )
+        rows = [
+            dict(row)
+            for row in self._run(
+                query,
+                [*params, bigquery.ScalarQueryParameter("limit", "INT64", page_size), bigquery.ScalarQueryParameter("offset", "INT64", offset)],
+            ).result()
+        ]
+        return rows, total
+
+    def update_conversion1_product(self, product_code: str, patch_fields: Dict[str, Any], updated_by: Optional[str]) -> bool:
+        # Update only editable columns on one active row and report whether a row was matched.
+        editable_columns = [
+            "storage_location", "notes", "number_units_produced", "numbered_in_order", "tensile_rigid_status", "tensile_films_status",
+            "seal_strength_status", "shelf_stability_status", "solubility_status", "defect_analysis_status", "blocking_status", "film_emc_status",
+            "friction_status", "width_mm", "length_m", "avg_film_thickness_um", "sd_film_thickness", "film_thickness_variation_percent",
+        ]
+        assignments = []
+        params: List[bigquery.ScalarQueryParameter] = []
+        for column in editable_columns:
+            if column not in patch_fields:
+                continue
+            assignments.append(f"{column} = @{column}")
+            ptype = "STRING"
+            if column in {"number_units_produced", "width_mm", "length_m", "avg_film_thickness_um"}:
+                ptype = "INT64"
+            elif column in {"sd_film_thickness", "film_thickness_variation_percent"}:
+                ptype = "FLOAT64"
+            elif column == "numbered_in_order":
+                ptype = "BOOL"
+            params.append(bigquery.ScalarQueryParameter(column, ptype, patch_fields.get(column)))
+        if not assignments:
+            return False
+        query = (
+            f"UPDATE `{self.dataset}.conversion1_products` SET "
+            + ", ".join(assignments)
+            + ", updated_at = CURRENT_TIMESTAMP(), updated_by = @updated_by "
+            + "WHERE product_code = @product_code AND is_active = TRUE"
+        )
+        params.extend([
+            bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
+            bigquery.ScalarQueryParameter("product_code", "STRING", product_code),
+        ])
+        job = self._run(query, params)
+        job.result()
+        return bool(job.num_dml_affected_rows)
 
     def create_compounding_how(
         self,

@@ -209,3 +209,57 @@ class PelletBagUpdate(BaseModel):
     remaining_mass_kg: Optional[float] = Field(default=None, ge=0)
     notes: Optional[str] = None
     customer: Optional[str] = None
+
+
+class Conversion1ProductCreate(BaseModel):
+    # Persist one canonical Conversion 1 How code token string used as the product-code prefix.
+    conversion1_how_code: str
+    # Allow controlled bulk creation while preventing accidental large fan-out submits.
+    number_of_records: int = Field(default=1, ge=1, le=200)
+
+    @validator("conversion1_how_code", pre=True)
+    def validate_conversion1_how_code(cls, value: str) -> str:
+        # Normalize repeated whitespace from dropdown/manual paste sources while preserving token text.
+        normalized = " ".join((value or "").strip().split())
+        if not normalized:
+            raise ValueError("conversion1_how_code is required")
+        return normalized
+
+
+class Conversion1ProductUpdate(BaseModel):
+    # Editable storage-location dropdown value from one constrained option list.
+    storage_location: Optional[str] = None
+    # Free-text notes allow quick in-table capture of observations.
+    notes: Optional[str] = None
+    # Integer production count is optional and nullable.
+    number_units_produced: Optional[int] = None
+    # Boolean yes/no workflow marker.
+    numbered_in_order: Optional[bool] = None
+    # Tensile-specific status uses the dedicated tensile enum set.
+    tensile_rigid_status: Optional[str] = None
+    # Tensile-specific status uses the dedicated tensile enum set.
+    tensile_films_status: Optional[str] = None
+    # Shared status field for seal strength progress.
+    seal_strength_status: Optional[str] = None
+    # Shared status field for shelf stability progress.
+    shelf_stability_status: Optional[str] = None
+    # Shared status field for solubility progress.
+    solubility_status: Optional[str] = None
+    # Shared status field for defect analysis progress.
+    defect_analysis_status: Optional[str] = None
+    # Shared status field for blocking progress.
+    blocking_status: Optional[str] = None
+    # Shared status field for film EMC progress.
+    film_emc_status: Optional[str] = None
+    # Shared status field for friction progress.
+    friction_status: Optional[str] = None
+    # Integer-only optional film width.
+    width_mm: Optional[int] = None
+    # Integer-only optional film length.
+    length_m: Optional[int] = None
+    # Integer-only optional average film thickness.
+    avg_film_thickness_um: Optional[int] = None
+    # Float optional standard deviation film thickness.
+    sd_film_thickness: Optional[float] = None
+    # Float optional film thickness variation percentage.
+    film_thickness_variation_percent: Optional[float] = None

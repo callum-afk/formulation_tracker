@@ -1931,6 +1931,343 @@ function attachPelletBagsPage() {
 
 
 
+
+
+function attachConversion1ProductsPage() {
+  // Bind only on Conversion 1 products route where the create form is present.
+  const form = document.getElementById('conversion1-products-create-form');
+  if (!form) return;
+
+  const errorsBox = document.getElementById('conversion1-products-errors');
+  const status = document.getElementById('conversion1-products-create-status');
+  const createdCodesContainer = document.getElementById('conversion1-products-created-codes');
+  const output = document.getElementById('conversion1-products-results');
+  const howSelect = document.getElementById('conversion1-products-how-select');
+  const howManual = document.getElementById('conversion1-products-how-manual');
+  const numberInput = document.getElementById('conversion1-products-number-of-records');
+  const filterInput = document.getElementById('conversion1-products-filter');
+  const filterButton = document.getElementById('conversion1-products-filter-button');
+
+  // Reuse API-provided option lists so create and edit controls stay in sync with backend validation.
+  const metaOptions = {
+    storage_location_options: [],
+    other_status_options: [],
+    tensile_status_options: [],
+  };
+
+  // Track pagination state locally to support filter reloads and table page-size controls.
+  const state = { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, search: '' };
+
+  function normalizeCodeValue() {
+    // Prefer manual pasted value when present, otherwise use dropdown selection.
+    const manualValue = (howManual.value || '').trim().replace(/\s+/g, ' ');
+    const selectValue = (howSelect.value || '').trim();
+    return manualValue || selectValue;
+  }
+
+  function showErrors(errors) {
+    // Render validation errors above the create panel to match existing form UX pattern.
+    if (!errors || errors.length === 0) {
+      errorsBox.style.display = 'none';
+      errorsBox.innerHTML = '';
+      return;
+    }
+    errorsBox.style.display = 'block';
+    errorsBox.innerHTML = errors.map((item) => `<p>${item}</p>`).join('');
+  }
+
+  function clearCreatedCodes() {
+    // Clear created-codes helper area before each fresh create attempt.
+    clearElement(createdCodesContainer);
+  }
+
+  function renderCreatedCodes(items) {
+    // Show just-created product codes for fast copy access after generation.
+    clearCreatedCodes();
+    if (!items || items.length === 0) return;
+    const list = document.createElement('ul');
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.textContent = item.product_code || '';
+      list.appendChild(li);
+    });
+    createdCodesContainer.appendChild(list);
+  }
+
+  function registerEditableControl(row, control) {
+    // Register each cell control for row-level edit/save toggling and payload extraction.
+    row._editable = row._editable || [];
+    row._editable.push(control);
+  }
+
+  function editableInputCell(row, value, name, type = 'text') {
+    // Build a disabled input cell that unlocks only in row edit mode.
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = type;
+    input.value = value ?? '';
+    input.name = name;
+    input.disabled = true;
+    td.appendChild(input);
+    registerEditableControl(row, input);
+    return td;
+  }
+
+  function editableSelectCell(row, value, name, options) {
+    // Build dropdown edit cells using API metadata option lists.
+    const td = document.createElement('td');
+    const select = document.createElement('select');
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Select';
+    select.appendChild(blank);
+    options.forEach((optionValue) => {
+      const option = document.createElement('option');
+      option.value = optionValue;
+      option.textContent = optionValue;
+      select.appendChild(option);
+    });
+    select.value = value ?? '';
+    select.name = name;
+    select.disabled = true;
+    td.appendChild(select);
+    registerEditableControl(row, select);
+    return td;
+  }
+
+  function editableBooleanCell(row, value, name) {
+    // Represent yes/no boolean with select options while keeping backend bool payload semantics.
+    const td = document.createElement('td');
+    const select = document.createElement('select');
+    [
+      { value: '', label: 'Select' },
+      { value: 'true', label: 'Yes' },
+      { value: 'false', label: 'No' },
+    ].forEach((entry) => {
+      const option = document.createElement('option');
+      option.value = entry.value;
+      option.textContent = entry.label;
+      select.appendChild(option);
+    });
+    if (value === true) select.value = 'true';
+    else if (value === false) select.value = 'false';
+    else select.value = '';
+    select.name = name;
+    select.disabled = true;
+    td.appendChild(select);
+    registerEditableControl(row, select);
+    return td;
+  }
+
+  function parseCellValue(input) {
+    // Convert editable control values into nullable typed payload values for PATCH requests.
+    if (input.tagName === 'SELECT' && input.name === 'numbered_in_order') {
+      if (input.value === '') return null;
+      return input.value === 'true';
+    }
+    if (input.type === 'number') {
+      if (input.value === '') return null;
+      return Number(input.value);
+    }
+    if (input.tagName === 'SELECT') {
+      return input.value || null;
+    }
+    return (input.value || '').trim() || null;
+  }
+
+  async function loadMeta() {
+    // Load all dropdown metadata and active how-code options needed by create/edit controls.
+    const [meta, howCodes] = await Promise.all([
+      fetchJson('/api/conversion1_products/meta'),
+      fetchJson('/api/conversion1_products/how_codes'),
+    ]);
+    metaOptions.storage_location_options = meta.storage_location_options || [];
+    metaOptions.other_status_options = meta.other_status_options || [];
+    metaOptions.tensile_status_options = meta.tensile_status_options || [];
+
+    clearElement(howSelect);
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = 'Select Conversion 1 How code';
+    howSelect.appendChild(defaultOption);
+    (howCodes.items || []).forEach((code) => {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = code;
+      howSelect.appendChild(option);
+    });
+  }
+
+  async function loadItems() {
+    // Fetch product rows for current filter/pagination settings and render inline-edit table.
+    const query = new URLSearchParams({
+      page: String(state.page),
+      page_size: String(state.pageSize),
+    });
+    if (state.search) query.set('search', state.search);
+    const data = await fetchJson(`/api/conversion1_products?${query.toString()}`);
+    state.total = Number(data.total || 0);
+
+    clearElement(output);
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    [
+      'Product code', 'Created at', 'Created by', 'Storage location', 'Notes', 'Number units produced', 'Numbered in order',
+      'Tensile rigid status', 'Tensile films status', 'Seal strength status', 'Shelf stability status', 'Solubility status',
+      'Defect analysis status', 'Blocking status', 'Film EMC status', 'Friction status', 'Width mm', 'Length m',
+      'Avg film thickness um', 'SD film thickness', 'Film thickness variation %', 'Action',
+    ].forEach((label) => {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    (data.items || []).forEach((item) => {
+      const row = document.createElement('tr');
+      const productCodeCell = document.createElement('td');
+      productCodeCell.textContent = item.product_code || '';
+      row.appendChild(productCodeCell);
+      const createdAtCell = document.createElement('td');
+      createdAtCell.textContent = formatTimestampForTable(item.created_at);
+      row.appendChild(createdAtCell);
+      const createdByCell = document.createElement('td');
+      createdByCell.textContent = item.created_by || '';
+      row.appendChild(createdByCell);
+
+      row.appendChild(editableSelectCell(row, item.storage_location, 'storage_location', metaOptions.storage_location_options));
+      row.appendChild(editableInputCell(row, item.notes, 'notes'));
+      row.appendChild(editableInputCell(row, item.number_units_produced, 'number_units_produced', 'number'));
+      row.appendChild(editableBooleanCell(row, item.numbered_in_order, 'numbered_in_order'));
+      row.appendChild(editableSelectCell(row, item.tensile_rigid_status, 'tensile_rigid_status', metaOptions.tensile_status_options));
+      row.appendChild(editableSelectCell(row, item.tensile_films_status, 'tensile_films_status', metaOptions.tensile_status_options));
+      row.appendChild(editableSelectCell(row, item.seal_strength_status, 'seal_strength_status', metaOptions.other_status_options));
+      row.appendChild(editableSelectCell(row, item.shelf_stability_status, 'shelf_stability_status', metaOptions.other_status_options));
+      row.appendChild(editableSelectCell(row, item.solubility_status, 'solubility_status', metaOptions.other_status_options));
+      row.appendChild(editableSelectCell(row, item.defect_analysis_status, 'defect_analysis_status', metaOptions.other_status_options));
+      row.appendChild(editableSelectCell(row, item.blocking_status, 'blocking_status', metaOptions.other_status_options));
+      row.appendChild(editableSelectCell(row, item.film_emc_status, 'film_emc_status', metaOptions.other_status_options));
+      row.appendChild(editableSelectCell(row, item.friction_status, 'friction_status', metaOptions.other_status_options));
+      row.appendChild(editableInputCell(row, item.width_mm, 'width_mm', 'number'));
+      row.appendChild(editableInputCell(row, item.length_m, 'length_m', 'number'));
+      row.appendChild(editableInputCell(row, item.avg_film_thickness_um, 'avg_film_thickness_um', 'number'));
+      row.appendChild(editableInputCell(row, item.sd_film_thickness, 'sd_film_thickness', 'number'));
+      row.appendChild(editableInputCell(row, item.film_thickness_variation_percent, 'film_thickness_variation_percent', 'number'));
+
+      const actionCell = document.createElement('td');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Edit';
+      button.addEventListener('click', async () => {
+        if (button.dataset.mode !== 'editing') {
+          button.dataset.mode = 'editing';
+          button.textContent = 'Save';
+          (row._editable || []).forEach((input) => { input.disabled = false; });
+          return;
+        }
+        const payload = {};
+        (row._editable || []).forEach((input) => {
+          payload[input.name] = parseCellValue(input);
+        });
+        await fetchJson(`/api/conversion1_products/${encodeURIComponent(item.product_code || '')}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        button.dataset.mode = '';
+        button.textContent = 'Edit';
+        (row._editable || []).forEach((input) => { input.disabled = true; });
+      });
+      actionCell.appendChild(button);
+      row.appendChild(actionCell);
+      tbody.appendChild(row);
+    });
+
+    if ((data.items || []).length === 0) {
+      const row = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 22;
+      td.textContent = 'No conversion 1 product entries loaded.';
+      row.appendChild(td);
+      tbody.appendChild(row);
+    }
+
+    table.appendChild(tbody);
+    output.appendChild(table);
+    decorateReusableTable(table, 0);
+
+    const controls = document.createElement('div');
+    renderPageSizeControl({
+      container: controls,
+      currentSize: state.pageSize,
+      onChange: async (newSize) => {
+        state.pageSize = newSize;
+        state.page = 1;
+        await loadItems();
+      },
+    });
+    const prev = document.createElement('button');
+    prev.type = 'button';
+    prev.textContent = 'Previous';
+    const next = document.createElement('button');
+    next.type = 'button';
+    next.textContent = 'Next';
+    const label = document.createElement('span');
+    prev.addEventListener('click', async () => { state.page = Math.max(1, state.page - 1); await loadItems(); });
+    next.addEventListener('click', async () => { state.page += 1; await loadItems(); });
+    controls.append(prev, label, next);
+    output.appendChild(controls);
+    updatePagerControls({ prevButton: prev, nextButton: next, label, page: state.page, total: state.total, pageSize: state.pageSize });
+  }
+
+  form.addEventListener('submit', async (event) => {
+    // Validate create form inputs client-side before requesting server-side creation.
+    event.preventDefault();
+    showErrors([]);
+    clearCreatedCodes();
+
+    const howCode = normalizeCodeValue();
+    const numberOfRecords = Number(numberInput.value || 1);
+    const errors = [];
+    if (!howCode) errors.push('Conversion 1 How code is required.');
+    if (!Number.isInteger(numberOfRecords) || numberOfRecords < 1 || numberOfRecords > 200) {
+      errors.push('Number of records must be an integer between 1 and 200.');
+    }
+    if (errors.length > 0) {
+      showErrors(errors);
+      return;
+    }
+
+    status.textContent = 'Creating...';
+    try {
+      const created = await postJson('/api/conversion1_products', {
+        conversion1_how_code: howCode,
+        number_of_records: numberOfRecords,
+      });
+      status.textContent = `Created ${created.items?.length || 0} product(s).`;
+      renderCreatedCodes(created.items || []);
+      state.page = 1;
+      await loadItems();
+    } catch (error) {
+      status.textContent = '';
+      showErrors([error.message]);
+    }
+  });
+
+  filterButton.addEventListener('click', async () => {
+    // Apply product-code substring filter and reload the first page of results.
+    state.search = (filterInput.value || '').trim();
+    state.page = 1;
+    await loadItems();
+  });
+
+  // Bootstrap dropdown metadata and initial table data once on page load.
+  loadMeta().then(loadItems).catch((error) => showErrors([error.message]));
+}
+
 // Render formulations on the pellet bag detail page from server-provided JSON payload.
 function attachPelletBagDetailFormulations() {
   // Locate the pellet detail formulation container and exit on non-detail routes.
@@ -2049,6 +2386,7 @@ attachLocationCodePage();
 attachLocationPartnerUtilityForm();
 attachCompoundingHowPage();
 attachPelletBagsPage();
+attachConversion1ProductsPage();
 attachBatchDetailFormulations();
 attachPelletBagDetailFormulations();
 attachSidebarNavigation();
