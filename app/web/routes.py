@@ -16,6 +16,27 @@ router = APIRouter()
 templates = Jinja2Templates(directory="app/web/templates")
 
 
+def _format_created_at_display(value) -> str:
+    # Standardize created-at timestamps globally so table columns always show HH:MM:SS - DD/MM/YYYY.
+    if not value:
+        return ""
+    # Pass through datetime objects from Python sources directly, otherwise parse ISO-like strings safely.
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            # Return original content when parsing fails so unknown values remain visible instead of blank.
+            return str(value)
+    # Render date/time with the required display contract used across all table views.
+    return parsed.strftime("%H:%M:%S  - %d/%m/%Y")
+
+
+# Register one reusable Jinja filter so templates can consistently format every created-at table value.
+templates.env.filters["created_at_display"] = _format_created_at_display
+
+
 
 
 def _is_google_drive_url(url: str) -> bool:
@@ -53,23 +74,17 @@ def _to_json_safe(value):
     return value
 
 
-def _resolve_conversion1_how_codes(process_code: str, processing_code: str, submit_action: str) -> tuple[list[str], str, str | None]:
-    # Track validation errors for process/processing inputs so the route can merge them with other field errors.
+def _resolve_conversion1_how_codes(process_code: str, processing_code: str, submit_action: str) -> tuple[list[str], str]:
+    # Track code-field validation errors so route handlers can combine them with URL and context-code checks.
     errors: list[str] = []
-    # Count how many of the mutually-exclusive inputs are populated by the user.
-    entered_code_count = int(bool(process_code)) + int(bool(processing_code))
-    # Enforce strict either/or behavior so only one of the two fields can be completed.
-    if entered_code_count > 1:
-        errors.append("Only one field can be completed: Process code or Processing code.")
-    # Require one code on save, while still allowing empty values during generate-only attempts.
-    if submit_action == "save" and entered_code_count == 0:
-        errors.append("Either Process code or Processing code is required.")
-    # Build one canonical processing code used for generated code text, duplicate checks, and persistence.
-    effective_processing_code = processing_code or process_code
-    # Preserve process_code only when processing_code is the active field, keeping saved rows mutually exclusive.
-    persisted_process_code = process_code if processing_code and process_code else None
-    # Return the computed validation result and canonical values back to the route handler.
-    return errors, effective_processing_code, persisted_process_code
+    # Require users to supply an existing process code when persisting How rows.
+    if submit_action == "save" and not process_code:
+        errors.append("Use Existing Process Code is required.")
+    # Require users to generate a new processing code before persisting How rows.
+    if submit_action == "save" and not processing_code:
+        errors.append("Generate New Process Code is required. Click Generate code first.")
+    # Return validation output and one canonical processing-code value used for duplicate checks and code preview.
+    return errors, processing_code
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -428,8 +443,8 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
     if processing_code and (len(processing_code) != 2 or not processing_code.isalpha()):
         errors.append("Processing code must be a two-letter code like AB.")
 
-    # Apply either/or validation and compute canonical persistence values for mutually-exclusive code entry.
-    code_errors, resolved_processing_code, persisted_process_code = _resolve_conversion1_how_codes(
+    # Validate required existing/new code fields and derive the canonical generated processing code token.
+    code_errors, resolved_processing_code = _resolve_conversion1_how_codes(
         process_code=process_code,
         processing_code=processing_code,
         submit_action=submit_action,
@@ -469,7 +484,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
                 "conversion1_how_code": generated_how_code,
                 "context_code": context_code,
                 "process_code": process_code,
-                "processing_code": processing_code or resolved_processing_code,
+                "processing_code": resolved_processing_code,
                 "failure_mode": failure_mode,
                 "machine_setup_url": machine_setup_url or None,
                 "processed_data_url": processed_data_url or None,
@@ -489,7 +504,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
             "errors": errors,
             "result": {
                 "conversion1_how_code": generated_how_code,
-                "process_code": persisted_process_code,
+                "process_code": process_code,
                 "processing_code": resolved_processing_code,
             } if generated_how_code else None,
             "rows": _to_json_safe(rows),
@@ -505,7 +520,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
                 "context_code_select": context_code_select,
                 "context_code_manual": context_code_manual,
                 "process_code": process_code,
-                "processing_code": processing_code or resolved_processing_code,
+                "processing_code": resolved_processing_code,
                 "failure_mode": failure_mode,
                 "machine_setup_url": machine_setup_url,
                 "processed_data_url": processed_data_url,
