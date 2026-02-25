@@ -13,3 +13,16 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.conversion1_how` (
   updated_by STRING,
   is_active BOOL NOT NULL
 );
+
+-- If the table already exists from an earlier schema, ensure required columns exist.
+ALTER TABLE `PROJECT_ID.DATASET_ID.conversion1_how`
+ADD COLUMN IF NOT EXISTS conversion1_how_code STRING;
+
+ALTER TABLE `PROJECT_ID.DATASET_ID.conversion1_how`
+ADD COLUMN IF NOT EXISTS processing_code STRING;
+
+ALTER TABLE `PROJECT_ID.DATASET_ID.conversion1_how`
+ADD COLUMN IF NOT EXISTS machine_setup_url STRING;
+
+ALTER TABLE `PROJECT_ID.DATASET_ID.conversion1_how`
+ADD COLUMN IF NOT EXISTS processed_data_url STRING;
