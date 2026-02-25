@@ -115,6 +115,24 @@ function parseList(value, separator = ',') {
     .filter(Boolean);
 }
 
+// Format timestamps into HH:MM:SS  - DD/MM/YYYY so every table shows one global date pattern.
+function formatTimestampForTable(rawValue) {
+  if (!rawValue) return '';
+  const parsed = new Date(rawValue);
+  if (Number.isNaN(parsed.getTime())) {
+    // Keep raw text visible when a value is not parseable as a JavaScript date.
+    return String(rawValue);
+  }
+  const pad2 = (value) => String(value).padStart(2, '0');
+  const hours = pad2(parsed.getHours());
+  const minutes = pad2(parsed.getMinutes());
+  const seconds = pad2(parsed.getSeconds());
+  const day = pad2(parsed.getDate());
+  const month = pad2(parsed.getMonth() + 1);
+  const year = parsed.getFullYear();
+  return `${hours}:${minutes}:${seconds}  - ${day}/${month}/${year}`;
+}
+
 // Normalize two-letter code input values (e.g. "ab" -> "AB") and validate strict A-Z format.
 function normalizeTwoLetterCode(rawValue) {
   const normalized = (rawValue || '').toString().trim().toUpperCase();
@@ -399,7 +417,7 @@ function attachBatchLookupForm() {
         batchLink.textContent = item.ingredient_batch_code;
         codeCell.appendChild(batchLink);
         const receivedCell = document.createElement('td');
-        receivedCell.textContent = item.received_at ? new Date(item.received_at).toLocaleString() : '';
+        receivedCell.textContent = formatTimestampForTable(item.received_at);
         const notesCell = document.createElement('td');
         notesCell.textContent = item.notes || '';
         const quantityCell = document.createElement('td');
@@ -564,7 +582,7 @@ function attachSetForm() {
         const ownerCell = document.createElement('td');
         ownerCell.textContent = item.created_by || 'Unknown';
         const createdCell = document.createElement('td');
-        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        createdCell.textContent = formatTimestampForTable(item.created_at);
         const skusCell = document.createElement('td');
         skusCell.textContent = Array.isArray(item.sku_list) ? item.sku_list.join(', ') : '';
         row.appendChild(setCodeCell);
@@ -1035,7 +1053,7 @@ function renderFormulationsTable(output, items) {
 
         const createdCell = document.createElement('td');
         createdCell.rowSpan = lineCount;
-        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        createdCell.textContent = formatTimestampForTable(item.created_at);
 
         const ownerCell = document.createElement('td');
         ownerCell.rowSpan = lineCount;
@@ -1283,7 +1301,7 @@ function attachLocationCodePage() {
         const machineSpecification = (item.machine_specification || '').toString().trim();
         partnerCell.textContent = machineSpecification ? `${item.partner_name || 'Unknown'} (${machineSpecification})` : (item.partner_name || 'Unknown');
         const createdCell = document.createElement('td');
-        createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+        createdCell.textContent = formatTimestampForTable(item.created_at);
         row.append(locationCell, ownerCell, partnerCell, createdCell);
         tableBody.appendChild(row);
       });
@@ -1497,7 +1515,7 @@ function attachCompoundingHowPage() {
       processingCodeCell.appendChild(createCopyTextBlock(item.processing_code || '', 'processing-copy'));
 
       const createdCell = document.createElement('td');
-      createdCell.textContent = item.created_at ? new Date(item.created_at).toLocaleString() : '';
+      createdCell.textContent = formatTimestampForTable(item.created_at);
 
       const ownerCell = document.createElement('td');
       ownerCell.textContent = item.created_by || 'Unknown';
@@ -1836,7 +1854,7 @@ function attachPelletBagsPage() {
       row.appendChild(editableInputCell(row, item.notes, 'notes'));
 
       const createdAt = document.createElement('td');
-      createdAt.textContent = item.created_at || '';
+      createdAt.textContent = formatTimestampForTable(item.created_at);
       const createdBy = document.createElement('td');
       createdBy.textContent = item.created_by || '';
       row.append(createdAt, createdBy);

@@ -450,6 +450,22 @@ main {
   margin-bottom: var(--space-4);
 }
 
+/* Conversion How context-code dropdown keeps full long codes visible without truncation. */
+.context-code-select {
+  min-width: 100%;
+}
+
+/* Dropdown option text preserves no-wrap display so full context-code length remains readable. */
+.context-code-select option {
+  white-space: nowrap;
+}
+
+/* Read-only generated-code field uses muted background to signal it cannot be typed manually. */
+input[readonly] {
+  background: color-mix(in srgb, white 60%, var(--color-paper-200));
+  cursor: not-allowed;
+}
+
 /* Labels are structured as compact stacks with clear weight and spacing. */
 label {
   display: flex;

@@ -81,7 +81,7 @@
         <td>{{ row.conversion_code }}</td>
         <td>{{ row.owner }}</td>
         <td>{{ row.conversion_partner }}</td>
-        <td>{{ row.created_at }}</td>
+        <td>{{ row.created_at | created_at_display }}</td>
       </tr>
       {% else %}
       <tr><td colspan="4">No conversion codes loaded.</td></tr>
