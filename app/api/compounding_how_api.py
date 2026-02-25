@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, CompoundingHowCreate, CompoundingHowUpdate
-from app.constants import FAILURE_MODES
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import code_to_int, int_to_code
 
@@ -16,7 +15,7 @@ router = APIRouter(prefix="/api/compounding_how", tags=["compounding_how"])
 @router.get("/meta", response_model=ApiResponse)
 def get_compounding_how_meta(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Provide dropdown metadata for location code and failure mode selectors on initial page load.
-    return ApiResponse(ok=True, data={"location_codes": bigquery.list_location_code_ids(), "failure_modes": FAILURE_MODES})
+    return ApiResponse(ok=True, data={"location_codes": bigquery.list_location_code_ids(), "failure_modes": bigquery.get_failure_modes()})
 
 
 @router.get("", response_model=ApiResponse)
@@ -37,7 +36,7 @@ def create_compounding_how(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="process_code_suffix must be two letters")
 
     # Validate failure mode against the fixed option list to keep reporting consistent.
-    if payload.failure_mode not in FAILURE_MODES:
+    if payload.failure_mode not in bigquery.get_failure_modes():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid failure mode")
 
     # Compose immutable processing code by appending generated process suffix to chosen location code.
@@ -76,7 +75,7 @@ def update_compounding_how(
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Validate editable failure mode on update to enforce the same controlled vocabulary as create.
-    if payload.failure_mode not in FAILURE_MODES:
+    if payload.failure_mode not in bigquery.get_failure_modes():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid failure mode")
     bigquery.update_compounding_how(
         processing_code=processing_code,

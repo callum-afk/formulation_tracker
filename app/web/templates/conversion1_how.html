@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+<!-- Conversion 1 How page presents context lookup, process metadata capture, and entry listing in one flow. -->
+<section class="panel">
+  <!-- Section header is required to be exactly "How" under page title Conversion 1. -->
+  <h2>{{ section_header }}</h2>
+  <!-- Validation and save/generate errors are shown prominently above the form. -->
+  {% if errors %}
+  <div class="form-errors">
+    {% for error in errors %}
+    <p>{{ error }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <!-- One form supports both generate-only and save actions via distinct submit buttons. -->
+  <form method="post" class="form-stack">
+    <!-- Grid layout keeps all required How fields compact and aligned. -->
+    <div class="grid">
+      <!-- Dropdown supports selecting an already-created full context code. -->
+      <label>Context code (drop down)
+        <select name="context_code_select">
+          <option value="">Select context code</option>
+          {% for context_code in context_codes %}
+          <option value="{{ context_code }}" {% if form_data and form_data.context_code_select == context_code %}selected{% endif %}>{{ context_code }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <!-- Manual text entry supports pasted full context codes from the Context page. -->
+      <label>Context code (text entry)
+        <input name="context_code_manual" placeholder="AB AC AC AD 240910 AF PR 0015 AB 240919" value="{{ form_data.context_code_manual if form_data else '' }}" />
+      </label>
+      <!-- Process code can be manual or generated based on persisted submissions. -->
+      <label>Process code
+        <input name="process_code" placeholder="AB" value="{{ form_data.process_code if form_data else '' }}" />
+      </label>
+      <!-- Failure mode reuses canonical allowed values used on pellet bag workflows. -->
+      <label>Failure mode
+        <select name="failure_mode">
+          <option value="">Select failure mode</option>
+          {% for failure_mode in failure_modes %}
+          <option value="{{ failure_mode }}" {% if form_data and form_data.failure_mode == failure_mode %}selected{% endif %}>{{ failure_mode }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <!-- Machine setup URL field stores Google Sheet/Drive setup references. -->
+      <label>Google sheet link: Machine Setup File
+        <input name="machine_setup_url" placeholder="https://docs.google.com/..." value="{{ form_data.machine_setup_url if form_data else '' }}" />
+      </label>
+      <!-- Processed data URL field stores Google Sheet/Drive processed dataset references. -->
+      <label>Google sheet link: Processed Data File
+        <input name="processed_data_url" placeholder="https://docs.google.com/..." value="{{ form_data.processed_data_url if form_data else '' }}" />
+      </label>
+    </div>
+    <!-- Inline action row keeps generate and save actions clearly separated. -->
+    <div class="inline-actions">
+      <!-- Generate action computes but does not persist the Conversion 1 How code. -->
+      <button type="submit" name="submit_action" value="generate">Generate code</button>
+      <!-- Save action persists generated data into BigQuery as Conversion 1 How entry. -->
+      <button type="submit" name="submit_action" value="save">Save Conversion how</button>
+    </div>
+  </form>
+  <!-- Generated code preview gives users an easy copy target after generation/save. -->
+  {% if result %}
+  <p><strong>Generated Conversion 1 How Code:</strong> <code>{{ result.conversion1_how_code }}</code></p>
+  {% endif %}
+</section>
+
+<!-- How entries table panel mirrors requested compact listing below the form. -->
+<section class="panel">
+  <!-- Panel title is required to be exactly "How entries". -->
+  <h2>How entries</h2>
+  <!-- Filter narrows rows by conversion/how code substring matching. -->
+  <form method="get" class="inline-actions">
+    <label>Filter conversion code <input name="q" value="{{ filters.q }}" placeholder="e.g. AB AC, 240919" /></label>
+    <button type="submit">Filter</button>
+  </form>
+  <!-- Compact table includes all requested metadata columns and file links. -->
+  <table>
+    <thead>
+      <tr>
+        <th>Conversion 1 How Code</th>
+        <th>Date created</th>
+        <th>Owner</th>
+        <th>Failure Mode</th>
+        <th>Machine Setup File</th>
+        <th>Processed Data File</th>
+        <th>Process code</th>
+        <th>Processing code</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.conversion1_how_code }}</td>
+        <td>{{ row.created_at }}</td>
+        <td>{{ row.created_by }}</td>
+        <td>{{ row.failure_mode }}</td>
+        <td>
+          {% if row.machine_setup_url %}
+          <a href="{{ row.machine_setup_url }}" target="_blank" rel="noopener noreferrer">Open</a>
+          {% endif %}
+        </td>
+        <td>
+          {% if row.processed_data_url %}
+          <a href="{{ row.processed_data_url }}" target="_blank" rel="noopener noreferrer">Open</a>
+          {% endif %}
+        </td>
+        <td>{{ row.process_code }}</td>
+        <td>{{ row.processing_code }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No conversion 1 how entries loaded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <!-- Pagination controls follow the established Previous/Page/Next pattern. -->
+  <div class="inline-actions">
+    {% if pagination.has_prev %}
+    <a href="/conversion1/how?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}&q={{ filters.q | urlencode }}">Previous</a>
+    {% endif %}
+    <span>Page {{ pagination.page }} of {{ ((pagination.total + pagination.page_size - 1) // pagination.page_size) if pagination.total else 1 }}</span>
+    {% if pagination.has_next %}
+    <a href="/conversion1/how?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}&q={{ filters.q | urlencode }}">Next</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

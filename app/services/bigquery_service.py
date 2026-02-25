@@ -11,7 +11,9 @@ from uuid import uuid4
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
+from app.constants import FAILURE_MODES
 from app.services.codegen_service import int_to_code
+from app.services.codegen_service import code_to_int
 
 
 LOGGER = logging.getLogger(__name__)
@@ -113,6 +115,7 @@ class BigQueryService:
             "pellet_bags": {"pellet_bag_id", "pellet_bag_code", "pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "bag_mass_kg", "remaining_mass_kg", "short_moisture_percent", "purpose", "reference_sample_taken", "qc_status", "long_moisture_status", "density_status", "injection_moulding_status", "film_forming_status", "injection_moulding_assignee_email", "film_forming_assignee_email", "notes", "customer", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "pellet_bag_assignees": {"email", "is_active", "created_at", "created_by"},
             "conversion1_context": {"context_code", "pellet_bag_code", "partner_code", "machine_code", "date_yymmdd", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
+            "conversion1_how": {"conversion1_how_code", "context_code", "process_code", "processing_code", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
         }
 
         # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
@@ -1018,6 +1021,119 @@ class BigQueryService:
         rows = self._run(query, data_params).result()
         return [dict(row) for row in rows], total
 
+
+    def conversion1_context_exists(self, context_code: str) -> bool:
+        # Check whether one active Conversion 1 Context row exists for submitted/pasted full context codes.
+        query = (
+            f"SELECT 1 FROM `{self.dataset}.conversion1_context` "
+            "WHERE context_code = @context_code AND is_active = TRUE LIMIT 1"
+        )
+        rows = list(self._run(query, [bigquery.ScalarQueryParameter("context_code", "STRING", context_code)]).result())
+        return bool(rows)
+
+    def get_failure_modes(self) -> List[str]:
+        # Return canonical failure modes from one shared constant used by pellet-bag and conversion workflows.
+        return list(FAILURE_MODES)
+
+    def get_next_conversion1_how_process_code(self, start_code: str = "AB") -> str:
+        # Derive the next process code from persisted Conversion 1 How submissions only.
+        query = (
+            f"SELECT process_code FROM `{self.dataset}.conversion1_how` "
+            "WHERE is_active = TRUE AND process_code IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT 2000"
+        )
+        rows = [dict(row) for row in self._run(query, []).result()]
+        highest_value = code_to_int(start_code)
+        for row in rows:
+            process_code = str(row.get("process_code") or "").strip().upper()
+            if not process_code:
+                continue
+            try:
+                highest_value = max(highest_value, code_to_int(process_code))
+            except ValueError:
+                continue
+        if not rows:
+            return start_code
+        return int_to_code(highest_value + 1)
+
+    def create_or_update_conversion1_how(self, entry: Dict[str, Any]) -> None:
+        # Upsert Conversion 1 How rows by code so duplicate submissions update deterministically via MERGE.
+        query = (
+            f"MERGE `{self.dataset}.conversion1_how` AS target "
+            "USING ("
+            "SELECT @conversion1_how_code AS conversion1_how_code, @context_code AS context_code, "
+            "@process_code AS process_code, @processing_code AS processing_code, @failure_mode AS failure_mode, "
+            "@machine_setup_url AS machine_setup_url, @processed_data_url AS processed_data_url, "
+            "@created_by AS created_by"
+            ") AS source "
+            "ON target.conversion1_how_code = source.conversion1_how_code "
+            "WHEN MATCHED THEN UPDATE SET "
+            "target.context_code = source.context_code, "
+            "target.process_code = source.process_code, "
+            "target.processing_code = source.processing_code, "
+            "target.failure_mode = source.failure_mode, "
+            "target.machine_setup_url = source.machine_setup_url, "
+            "target.processed_data_url = source.processed_data_url, "
+            "target.updated_at = CURRENT_TIMESTAMP(), "
+            "target.updated_by = source.created_by, "
+            "target.is_active = TRUE "
+            "WHEN NOT MATCHED THEN INSERT ("
+            "conversion1_how_code, context_code, process_code, processing_code, failure_mode, machine_setup_url, "
+            "processed_data_url, created_at, created_by, updated_at, updated_by, is_active"
+            ") VALUES ("
+            "source.conversion1_how_code, source.context_code, source.process_code, source.processing_code, source.failure_mode, "
+            "source.machine_setup_url, source.processed_data_url, CURRENT_TIMESTAMP(), source.created_by, "
+            "CURRENT_TIMESTAMP(), source.created_by, TRUE"
+            ")"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("conversion1_how_code", "STRING", entry["conversion1_how_code"]),
+                bigquery.ScalarQueryParameter("context_code", "STRING", entry["context_code"]),
+                bigquery.ScalarQueryParameter("process_code", "STRING", entry.get("process_code")),
+                bigquery.ScalarQueryParameter("processing_code", "STRING", entry["processing_code"]),
+                bigquery.ScalarQueryParameter("failure_mode", "STRING", entry.get("failure_mode")),
+                bigquery.ScalarQueryParameter("machine_setup_url", "STRING", entry.get("machine_setup_url")),
+                bigquery.ScalarQueryParameter("processed_data_url", "STRING", entry.get("processed_data_url")),
+                bigquery.ScalarQueryParameter("created_by", "STRING", entry.get("created_by")),
+            ],
+        ).result()
+
+    def list_conversion1_how_entries(
+        self,
+        search: Optional[str],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        # Return newest-first Conversion 1 How rows with optional conversion-code substring filtering.
+        where: List[str] = ["h.is_active = TRUE"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        if search:
+            where.append("CONTAINS_SUBSTR(h.conversion1_how_code, @search)")
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", search))
+        where_clause = "WHERE " + " AND ".join(where)
+
+        count_query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.conversion1_how` h {where_clause}"
+        total_rows = list(self._run(count_query, params).result())
+        total = int(total_rows[0]["total"]) if total_rows else 0
+
+        offset = max(page - 1, 0) * page_size
+        query = (
+            "SELECT h.conversion1_how_code, h.context_code, h.process_code, h.processing_code, h.failure_mode, "
+            "h.machine_setup_url, h.processed_data_url, h.created_at, h.created_by "
+            f"FROM `{self.dataset}.conversion1_how` h "
+            f"{where_clause} "
+            "ORDER BY h.created_at DESC, h.conversion1_how_code DESC "
+            "LIMIT @limit OFFSET @offset"
+        )
+        data_params = [
+            *params,
+            bigquery.ScalarQueryParameter("limit", "INT64", page_size),
+            bigquery.ScalarQueryParameter("offset", "INT64", offset),
+        ]
+        rows = [dict(row) for row in self._run(query, data_params).result()]
+        return rows, total
 
     def create_compounding_how(
         self,
