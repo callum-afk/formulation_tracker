@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Creation panel mirrors pellet-bag layout with dropdown/manual code input and bulk count field. -->
+  <h2>Create products</h2>
+  <div id="conversion1-products-errors" class="form-errors" style="display: none;"></div>
+  <form id="conversion1-products-create-form" class="form-stack">
+    <div class="grid">
+      <!-- Dropdown allows picking from active Conversion 1 How codes loaded from metadata endpoint. -->
+      <label>Conversion 1 How code (drop down)
+        <select id="conversion1-products-how-select" name="conversion1_how_code_select">
+          <option value="">Select Conversion 1 How code</option>
+        </select>
+      </label>
+      <!-- Manual text entry supports pasting a full Conversion 1 How code token string. -->
+      <label>Conversion 1 How code (manual paste)
+        <input id="conversion1-products-how-manual" name="conversion1_how_code_manual" placeholder="EV AB ... JV" />
+      </label>
+      <!-- Number-of-records input is hard limited to 1-200 to avoid accidental bulk spam. -->
+      <label>Number of records to create
+        <input id="conversion1-products-number-of-records" name="number_of_records" type="number" min="1" max="200" value="1" required />
+      </label>
+    </div>
+    <!-- Generate action creates one or many rows with globally sequenced 4-digit suffixes. -->
+    <button type="submit">Generate Product Codes</button>
+  </form>
+  <p id="conversion1-products-create-status"></p>
+  <div id="conversion1-products-created-codes"></div>
+</section>
+
+<section class="panel">
+  <!-- Management table panel exposes filter, inline edit controls, and row-level save actions. -->
+  <h2>Created products table</h2>
+  <div class="inline-actions">
+    <label>Filter product codes <input id="conversion1-products-filter" placeholder="e.g. 0004, EV AB" /></label>
+    <button id="conversion1-products-filter-button" type="button">Filter</button>
+  </div>
+  <div id="conversion1-products-results"></div>
+</section>
+{% endblock %}

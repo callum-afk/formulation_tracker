@@ -17,6 +17,7 @@ from app.api.formulations_api import router as formulations_router
 from app.api.location_codes_api import router as location_codes_router
 from app.api.compounding_how_api import router as compounding_how_router
 from app.api.pellet_bags_api import router as pellet_bags_router
+from app.api.conversion1_products_api import router as conversion1_products_router
 from app.web.routes import router as web_router
 
 LOGGER = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ app.include_router(formulations_router)
 app.include_router(location_codes_router)
 app.include_router(compounding_how_router)
 app.include_router(pellet_bags_router)
+app.include_router(conversion1_products_router)
 app.include_router(web_router)
 
 app.mount("/static", StaticFiles(directory="app/web/static"), name="static")

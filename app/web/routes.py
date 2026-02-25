@@ -533,6 +533,16 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
     )
 
 
+
+
+@router.get("/conversion1/products", response_class=HTMLResponse)
+async def conversion1_products_page(request: Request) -> HTMLResponse:
+    # Serve Conversion 1 Products management page; data is loaded via API to mirror pellet-bag UX.
+    return templates.TemplateResponse(
+        "conversion1_products.html",
+        {"request": request, "title": "Conversion 1"},
+    )
+
 @router.get("/pellet-bags/status/{status_column}", response_class=HTMLResponse)
 async def pellet_bag_status_list(status_column: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Render full status list pages used by dashboard view all links.
