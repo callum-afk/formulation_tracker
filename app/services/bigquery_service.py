@@ -18,6 +18,14 @@ from app.services.codegen_service import code_to_int
 
 LOGGER = logging.getLogger(__name__)
 
+# Restrict status-list updates to explicit status/assignee field mappings to prevent arbitrary column writes.
+STATUS_LIST_FIELD_MAPPING: Dict[str, Dict[str, str]] = {
+    "long_moisture_status": {"status": "long_moisture_status", "assigned": "long_moisture_assignee_email"},
+    "density_status": {"status": "density_status", "assigned": "density_assignee_email"},
+    "injection_moulding_status": {"status": "injection_moulding_status", "assigned": "injection_moulding_assignee_email"},
+    "film_forming_status": {"status": "film_forming_status", "assigned": "film_forming_assignee_email"},
+}
+
 
 @dataclass
 class BigQueryService:
@@ -112,7 +120,7 @@ class BigQueryService:
             "location_codes": {"set_code", "weight_code", "batch_variant_code", "partner_code", "production_date", "location_id", "created_at", "created_by"},
             "compounding_how": {"processing_code", "location_code", "process_code_suffix", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "code_counters": {"counter_name", "scope", "next_value", "updated_at"},
-            "pellet_bags": {"pellet_bag_id", "pellet_bag_code", "pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "bag_mass_kg", "remaining_mass_kg", "short_moisture_percent", "purpose", "reference_sample_taken", "qc_status", "long_moisture_status", "density_status", "injection_moulding_status", "film_forming_status", "injection_moulding_assignee_email", "film_forming_assignee_email", "notes", "customer", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
+            "pellet_bags": {"pellet_bag_id", "pellet_bag_code", "pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "bag_mass_kg", "remaining_mass_kg", "short_moisture_percent", "purpose", "reference_sample_taken", "qc_status", "long_moisture_status", "density_status", "injection_moulding_status", "film_forming_status", "long_moisture_assignee_email", "density_assignee_email", "injection_moulding_assignee_email", "film_forming_assignee_email", "notes", "customer", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "pellet_bag_assignees": {"email", "is_active", "created_at", "created_by"},
             "conversion1_context": {"context_code", "pellet_bag_code", "partner_code", "machine_code", "date_yymmdd", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
             "conversion1_how": {"conversion1_how_code", "context_code", "process_code", "processing_code", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
@@ -1502,12 +1510,12 @@ class BigQueryService:
                 "(pellet_bag_id, pellet_bag_code, pellet_bag_code_tokens, compounding_how_code, product_type, sequence_number, "
                 "bag_mass_kg, remaining_mass_kg, short_moisture_percent, purpose, reference_sample_taken, qc_status, "
                 "long_moisture_status, density_status, injection_moulding_status, film_forming_status, "
-                "injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, "
+                "long_moisture_assignee_email, density_assignee_email, injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, "
                 "created_at, updated_at, created_by, updated_by, is_active) "
                 "VALUES (@pellet_bag_id, @pellet_bag_code, @pellet_bag_code_tokens, @compounding_how_code, @product_type, @sequence_number, "
                 "@bag_mass_kg, @remaining_mass_kg, @short_moisture_percent, @purpose, @reference_sample_taken, @qc_status, "
                 "@long_moisture_status, @density_status, @injection_moulding_status, @film_forming_status, "
-                "@injection_moulding_assignee_email, @film_forming_assignee_email, @notes, @customer, "
+                "@long_moisture_assignee_email, @density_assignee_email, @injection_moulding_assignee_email, @film_forming_assignee_email, @notes, @customer, "
                 "CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @created_by, @updated_by, TRUE)",
                 [
                     bigquery.ScalarQueryParameter("pellet_bag_id", "STRING", pellet_bag_id),
@@ -1526,6 +1534,8 @@ class BigQueryService:
                     bigquery.ScalarQueryParameter("density_status", "STRING", optional_fields.get("density_status")),
                     bigquery.ScalarQueryParameter("injection_moulding_status", "STRING", optional_fields.get("injection_moulding_status")),
                     bigquery.ScalarQueryParameter("film_forming_status", "STRING", optional_fields.get("film_forming_status")),
+                    bigquery.ScalarQueryParameter("long_moisture_assignee_email", "STRING", optional_fields.get("long_moisture_assignee_email")),
+                    bigquery.ScalarQueryParameter("density_assignee_email", "STRING", optional_fields.get("density_assignee_email")),
                     bigquery.ScalarQueryParameter("injection_moulding_assignee_email", "STRING", optional_fields.get("injection_moulding_assignee_email")),
                     bigquery.ScalarQueryParameter("film_forming_assignee_email", "STRING", optional_fields.get("film_forming_assignee_email")),
                     bigquery.ScalarQueryParameter("notes", "STRING", optional_fields.get("notes")),
@@ -1552,6 +1562,8 @@ class BigQueryService:
                 "density_status": optional_fields.get("density_status"),
                 "injection_moulding_status": optional_fields.get("injection_moulding_status"),
                 "film_forming_status": optional_fields.get("film_forming_status"),
+                "long_moisture_assignee_email": optional_fields.get("long_moisture_assignee_email"),
+                "density_assignee_email": optional_fields.get("density_assignee_email"),
                 "injection_moulding_assignee_email": optional_fields.get("injection_moulding_assignee_email"),
                 "film_forming_assignee_email": optional_fields.get("film_forming_assignee_email"),
                 "notes": optional_fields.get("notes"),
@@ -1655,7 +1667,11 @@ class BigQueryService:
         # Query rows where the chosen status is meaningful and not in excluded sentinel values.
         # Map each status stream to its dedicated assignee field; QC statuses fall back to creator ownership.
         assigned_expression = "created_by"
-        if status_column == "injection_moulding_status":
+        if status_column == "long_moisture_status":
+            assigned_expression = "COALESCE(long_moisture_assignee_email, created_by)"
+        elif status_column == "density_status":
+            assigned_expression = "COALESCE(density_assignee_email, created_by)"
+        elif status_column == "injection_moulding_status":
             assigned_expression = "COALESCE(injection_moulding_assignee_email, created_by)"
         elif status_column == "film_forming_status":
             assigned_expression = "COALESCE(film_forming_assignee_email, created_by)"
@@ -1675,7 +1691,7 @@ class BigQueryService:
             f"SELECT pellet_bag_id, pellet_bag_code, pellet_bag_code_tokens, compounding_how_code, product_type, sequence_number, "
             "bag_mass_kg, remaining_mass_kg, short_moisture_percent, purpose, reference_sample_taken, qc_status, "
             "long_moisture_status, density_status, injection_moulding_status, film_forming_status, "
-            "injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, created_at, updated_at, created_by, updated_by "
+            "long_moisture_assignee_email, density_assignee_email, injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, created_at, updated_at, created_by, updated_by "
             f"FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE ORDER BY created_at DESC, sequence_number DESC"
         )
         return [dict(row) for row in self._run(query, []).result()]
@@ -1709,6 +1725,53 @@ class BigQueryService:
             "total_pellets_produced_kg": float(row.get("total_pellets_produced_kg") or 0),
         }
 
+    def update_pellet_bag_status_and_assignee(
+        self,
+        pellet_bag_code: str,
+        status_column: str,
+        status_value: str,
+        assigned_value: Optional[str],
+        updated_by: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        # Restrict dynamic SQL identifiers to one explicit status/assignee mapping dictionary.
+        mapping = STATUS_LIST_FIELD_MAPPING.get(status_column)
+        if not mapping:
+            raise ValueError("Invalid status_column")
+
+        status_field = mapping["status"]
+        assigned_field = mapping["assigned"]
+        # Update exactly the selected status and mapped assignee fields for one active pellet bag row.
+        update_query = (
+            f"UPDATE `{self.dataset}.pellet_bags` SET "
+            f"{status_field} = @status_value, "
+            f"{assigned_field} = @assigned_value, "
+            "updated_at = CURRENT_TIMESTAMP(), "
+            "updated_by = @updated_by "
+            "WHERE pellet_bag_code = @pellet_bag_code AND is_active = TRUE"
+        )
+        job = self._run(
+            update_query,
+            [
+                bigquery.ScalarQueryParameter("status_value", "STRING", status_value),
+                bigquery.ScalarQueryParameter("assigned_value", "STRING", assigned_value),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
+                bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_bag_code),
+            ],
+        )
+        job.result()
+        # Enforce single-row updates so the API can fail closed on missing/duplicate active records.
+        if job.num_dml_affected_rows != 1:
+            return None
+
+        # Return the updated values so the inline editor can update the row without a full table refresh.
+        return {
+            "pellet_bag_code": pellet_bag_code,
+            "status_column": status_column,
+            "status_value": status_value,
+            "assigned_value": assigned_value,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     def update_pellet_bag(self, pellet_bag_id: str, updated_by: Optional[str], optional_fields: Dict[str, Any]) -> bool:
         # Update only editable optional fields while preserving immutable identifiers and creation metadata.
         query = (
@@ -1722,6 +1785,8 @@ class BigQueryService:
             "density_status = COALESCE(@density_status, density_status), "
             "injection_moulding_status = COALESCE(@injection_moulding_status, injection_moulding_status), "
             "film_forming_status = COALESCE(@film_forming_status, film_forming_status), "
+            "long_moisture_assignee_email = COALESCE(@long_moisture_assignee_email, long_moisture_assignee_email), "
+            "density_assignee_email = COALESCE(@density_assignee_email, density_assignee_email), "
             "injection_moulding_assignee_email = COALESCE(@injection_moulding_assignee_email, injection_moulding_assignee_email), "
             "film_forming_assignee_email = COALESCE(@film_forming_assignee_email, film_forming_assignee_email), "
             "notes = COALESCE(@notes, notes), "
@@ -1741,6 +1806,8 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("density_status", "STRING", optional_fields.get("density_status")),
                 bigquery.ScalarQueryParameter("injection_moulding_status", "STRING", optional_fields.get("injection_moulding_status")),
                 bigquery.ScalarQueryParameter("film_forming_status", "STRING", optional_fields.get("film_forming_status")),
+                bigquery.ScalarQueryParameter("long_moisture_assignee_email", "STRING", optional_fields.get("long_moisture_assignee_email")),
+                bigquery.ScalarQueryParameter("density_assignee_email", "STRING", optional_fields.get("density_assignee_email")),
                 bigquery.ScalarQueryParameter("injection_moulding_assignee_email", "STRING", optional_fields.get("injection_moulding_assignee_email")),
                 bigquery.ScalarQueryParameter("film_forming_assignee_email", "STRING", optional_fields.get("film_forming_assignee_email")),
                 bigquery.ScalarQueryParameter("notes", "STRING", optional_fields.get("notes")),

@@ -1,20 +1,150 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel">
+  <!-- Show the active status stream name so users understand which workflow list they are editing. -->
   <h2>Status list for {{ status_column }}</h2>
-  <table>
-    <thead><tr><th>Pellet bag code</th><th>Status</th><th>Assigned</th></tr></thead>
+  <!-- Keep one standard table layout and add an actions column for per-row inline editing controls. -->
+  <table id="pellet-status-table" data-status-column="{{ status_column }}">
+    <thead><tr><th>Pellet bag code</th><th>Status</th><th>Assigned</th><th>Actions</th></tr></thead>
     <tbody>
       {% for item in items %}
-      <tr>
+      <!-- Store raw values in data attributes so JavaScript can toggle edit mode without extra API reads. -->
+      <tr data-pellet-bag-code="{{ item.pellet_bag_code }}" data-status-value="{{ item.status_value or '' }}" data-assigned-value="{{ item.assigned_to or '' }}">
         <td><a href="/pellet-bags/{{ item.pellet_bag_code }}">{{ item.pellet_bag_code }}</a></td>
-        <td>{{ item.status_value }}</td>
-        <td>{{ item.assigned_to or "" }}</td>
+        <td data-cell="status">{{ item.status_value or "" }}</td>
+        <td data-cell="assigned">{{ item.assigned_to or "" }}</td>
+        <td data-cell="actions">
+          <button type="button" data-action="edit">Edit</button>
+          <button type="button" data-action="save" hidden>Save</button>
+          <button type="button" data-action="cancel" hidden>Cancel</button>
+          <small data-row-error style="display:none;color:#b42318"></small>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="3">No items</td></tr>
+      <tr><td colspan="4">No items</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
+
+<script>
+  // Reuse server-rendered canonical status options derived from /pellet_bags metadata rules.
+  const statusOptions = {{ status_options | tojson }};
+  // Reuse server-rendered canonical assignee options derived from /pellet_bags metadata rules.
+  const assigneeOptions = {{ assignee_options | tojson }};
+
+  // Read and keep one safe status_column value from server output instead of trusting client path parsing.
+  const table = document.getElementById('pellet-status-table');
+  const statusColumn = table?.dataset.statusColumn || '';
+
+  // Build one option element and flag the selected value for dropdown rendering helpers.
+  function optionElement(value, selectedValue) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    option.selected = value === selectedValue;
+    return option;
+  }
+
+  // Build one select element from a list of options plus an optional blank entry for assignee clears.
+  function buildSelect(options, selectedValue, allowBlank = false) {
+    const select = document.createElement('select');
+    if (allowBlank) {
+      select.appendChild(optionElement('', selectedValue || ''));
+    }
+    options.forEach((value) => {
+      select.appendChild(optionElement(value, selectedValue || ''));
+    });
+    return select;
+  }
+
+  // Toggle one row into inline-edit mode by replacing text cells with dropdown controls.
+  function enterEditMode(row) {
+    const statusCell = row.querySelector('[data-cell="status"]');
+    const assignedCell = row.querySelector('[data-cell="assigned"]');
+    const statusSelect = buildSelect(statusOptions, row.dataset.statusValue || '', false);
+    const assignedSelect = buildSelect(assigneeOptions, row.dataset.assignedValue || '', true);
+    statusSelect.dataset.input = 'status';
+    assignedSelect.dataset.input = 'assigned';
+    statusCell.replaceChildren(statusSelect);
+    assignedCell.replaceChildren(assignedSelect);
+    row.querySelector('[data-action="edit"]').hidden = true;
+    row.querySelector('[data-action="save"]').hidden = false;
+    row.querySelector('[data-action="cancel"]').hidden = false;
+  }
+
+  // Toggle one row back to read-only mode while restoring plain text cell contents.
+  function exitEditMode(row, statusValue, assignedValue) {
+    row.dataset.statusValue = statusValue || '';
+    row.dataset.assignedValue = assignedValue || '';
+    row.querySelector('[data-cell="status"]').textContent = statusValue || '';
+    row.querySelector('[data-cell="assigned"]').textContent = assignedValue || '';
+    row.querySelector('[data-action="edit"]').hidden = false;
+    row.querySelector('[data-action="save"]').hidden = true;
+    row.querySelector('[data-action="cancel"]').hidden = true;
+    const errorElement = row.querySelector('[data-row-error]');
+    errorElement.style.display = 'none';
+    errorElement.textContent = '';
+  }
+
+  // Show one row-level inline error message without leaving edit mode.
+  function showRowError(row, message) {
+    const errorElement = row.querySelector('[data-row-error]');
+    errorElement.textContent = message;
+    errorElement.style.display = 'block';
+  }
+
+  // Send one PATCH request for one edited row and return the canonical server response payload.
+  async function saveRow(row) {
+    const statusSelect = row.querySelector('select[data-input="status"]');
+    const assignedSelect = row.querySelector('select[data-input="assigned"]');
+    const response = await fetch('/api/pellet-bags/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pellet_bag_code: row.dataset.pelletBagCode,
+        status_column: statusColumn,
+        status_value: statusSelect?.value || '',
+        assigned_value: assignedSelect?.value || '',
+      }),
+    });
+    const bodyText = await response.text();
+    let payload = {};
+    try {
+      payload = bodyText ? JSON.parse(bodyText) : {};
+    } catch (error) {
+      throw new Error(bodyText || response.statusText || 'Unexpected server response');
+    }
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.detail || payload.error || response.statusText || 'Unable to save row');
+    }
+    return payload.data.updated_row;
+  }
+
+  // Handle delegated button clicks so static and future rows share one consistent inline-edit behavior.
+  table?.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const row = event.target.closest('tr[data-pellet-bag-code]');
+    if (!row) return;
+
+    const action = button.dataset.action;
+    if (action === 'edit') {
+      enterEditMode(row);
+      return;
+    }
+    if (action === 'cancel') {
+      exitEditMode(row, row.dataset.statusValue || '', row.dataset.assignedValue || '');
+      return;
+    }
+    if (action === 'save') {
+      try {
+        const updatedRow = await saveRow(row);
+        exitEditMode(row, updatedRow.status_value || '', updatedRow.assigned_value || '');
+      } catch (error) {
+        showRowError(row, error.message || 'Unable to save row');
+      }
+    }
+  });
+</script>
 {% endblock %}

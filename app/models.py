@@ -171,6 +171,8 @@ class PelletBagCreate(BaseModel):
     density_status: Optional[str] = None
     injection_moulding_status: Optional[str] = None
     film_forming_status: Optional[str] = None
+    long_moisture_assignee_email: Optional[str] = None
+    density_assignee_email: Optional[str] = None
     injection_moulding_assignee_email: Optional[str] = None
     film_forming_assignee_email: Optional[str] = None
     remaining_mass_kg: Optional[float] = Field(default=None, ge=0)
@@ -204,12 +206,24 @@ class PelletBagUpdate(BaseModel):
     density_status: Optional[str] = None
     injection_moulding_status: Optional[str] = None
     film_forming_status: Optional[str] = None
+    long_moisture_assignee_email: Optional[str] = None
+    density_assignee_email: Optional[str] = None
     injection_moulding_assignee_email: Optional[str] = None
     film_forming_assignee_email: Optional[str] = None
     remaining_mass_kg: Optional[float] = Field(default=None, ge=0)
     notes: Optional[str] = None
     customer: Optional[str] = None
 
+
+class PelletBagStatusListUpdate(BaseModel):
+    # Identify one pellet bag row to update from the status-list inline editor workflow.
+    pellet_bag_code: str
+    # Restrict updates to one approved status stream selected by route context.
+    status_column: str
+    # Persist one canonical status option value chosen from the server-provided dropdown list.
+    status_value: str
+    # Persist one canonical assignee email (or blank) from the shared assignee dropdown list.
+    assigned_value: Optional[str] = None
 
 class Conversion1ProductCreate(BaseModel):
     # Persist one canonical Conversion 1 How code token string used as the product-code prefix.
