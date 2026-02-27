@@ -1666,6 +1666,7 @@ class BigQueryService:
         if status_column not in allowed_columns:
             raise ValueError("Invalid status column")
         # Query rows where the chosen status is meaningful and not in excluded sentinel values.
+        # Exclude terminal "complete" statuses so status list pages only show active work queues.
         # Map each status stream to its dedicated assignee field; QC statuses fall back to creator ownership.
         assigned_expression = "created_by"
         if status_column == "long_moisture_status":
@@ -1681,7 +1682,7 @@ class BigQueryService:
             f"FROM `{self.dataset}.pellet_bags` "
             f"WHERE is_active = TRUE AND {status_column} IS NOT NULL "
             f"AND TRIM({status_column}) != '' "
-            f"AND LOWER(TRIM({status_column})) NOT IN ('not requested', 'not received') "
+            f"AND LOWER(TRIM({status_column})) NOT IN ('not requested', 'not received', 'complete') "
             "ORDER BY COALESCE(updated_at, created_at) DESC LIMIT @limit"
         )
         return [dict(row) for row in self._run(query, [bigquery.ScalarQueryParameter("limit", "INT64", limit)]).result()]
