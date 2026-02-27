@@ -1234,6 +1234,7 @@ class BigQueryService:
                 "@tensile_rigid_status, @tensile_films_status, @seal_strength_status, @shelf_stability_status, @solubility_status, "
                 "@defect_analysis_status, @blocking_status, @film_emc_status, @friction_status, @width_mm, @length_m, @avg_film_thickness_um, "
                 "@sd_film_thickness, @film_thickness_variation_percent, CURRENT_TIMESTAMP(), @created_by, CURRENT_TIMESTAMP(), @updated_by, TRUE "
+                "FROM (SELECT 1) "
                 f"WHERE NOT EXISTS (SELECT 1 FROM `{self.dataset}.conversion1_products` WHERE product_code = @product_code)",
                 [
                     # Bind identity and generated code fields.
