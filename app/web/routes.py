@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.dependencies import get_bigquery, get_settings, get_storage
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from app.api.pellet_bags_api import DEFAULT_ASSIGNEE_EMAILS, STATUS_LIST_COLUMN_WHITELIST, get_allowed_status_options, normalize_status_value
 from app.services.bigquery_service import BigQueryService
 from app.services.storage_service import StorageService
 
@@ -545,11 +546,31 @@ async def conversion1_products_page(request: Request) -> HTMLResponse:
 
 @router.get("/pellet-bags/status/{status_column}", response_class=HTMLResponse)
 async def pellet_bag_status_list(status_column: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
-    # Render full status list pages used by dashboard view all links.
+    # Validate status stream names from the path so only approved dashboard pages can render/edit data.
+    if status_column not in STATUS_LIST_COLUMN_WHITELIST:
+        raise HTTPException(status_code=404, detail="Status page not found")
+
+    # Load table rows and normalize legacy typo statuses for consistent display.
     items = bigquery.list_pellet_bags_with_meaningful_status(status_column, limit=500)
+    normalized_items = [
+        {
+            **item,
+            "status_value": normalize_status_value(item.get("status_value")),
+        }
+        for item in items
+    ]
+
+    # Reuse canonical dropdown option sources from /pellet_bags metadata for server-rendered inline editor controls.
     return templates.TemplateResponse(
         "pellet_bag_status_list.html",
-        {"request": request, "title": "Pellet Bag Status List", "status_column": status_column, "items": items},
+        {
+            "request": request,
+            "title": "Pellet Bag Status List",
+            "status_column": status_column,
+            "status_options": get_allowed_status_options(status_column),
+            "assignee_options": bigquery.list_pellet_bag_assignees(default_emails=DEFAULT_ASSIGNEE_EMAILS),
+            "items": normalized_items,
+        },
     )
 
 

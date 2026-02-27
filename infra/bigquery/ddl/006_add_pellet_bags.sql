@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.pellet_bags` (
   density_status STRING,
   injection_moulding_status STRING,
   film_forming_status STRING,
+  long_moisture_assignee_email STRING,
+  density_assignee_email STRING,
   injection_moulding_assignee_email STRING,
   film_forming_assignee_email STRING,
   notes STRING,

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 
-from app.api.pellet_bags_api import INJECTION_FILM_STATUS_OPTIONS, _validate_optional_payload
+from app.api.pellet_bags_api import INJECTION_FILM_STATUS_OPTIONS, get_allowed_status_options, normalize_status_value, _validate_optional_payload
 from app.models import PelletBagCreate
 from app.services.bigquery_service import BigQueryService
 
@@ -156,6 +156,71 @@ class PelletBagTests(unittest.TestCase):
         service.get_sku_summary("ABC_001_25KG")
 
         self.assertTrue(any("UNNEST(f.sku_list)" in query for query in captured_queries))
+
+    def test_status_option_normalization_exposes_received(self) -> None:
+        # Ensure status list pages render canonical Received labels even when legacy source options include Recieved.
+        options = get_allowed_status_options("long_moisture_status")
+
+        self.assertIn("Received", options)
+        self.assertNotIn("Recieved", options)
+
+    def test_normalize_status_value_maps_legacy_spelling(self) -> None:
+        # Normalize historical typo values so saves always persist canonical status text.
+        self.assertEqual(normalize_status_value("Recieved"), "Received")
+
+    def test_list_pellet_bags_with_meaningful_status_uses_density_assignee_fallback(self) -> None:
+        # Ensure density dashboard pages map assigned_to from density assignee column before falling back to creator.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+
+        captured = {}
+
+        class _FakeResult:
+            def result(self):
+                return []
+
+        def fake_run(query, params):
+            captured["query"] = query
+            return _FakeResult()
+
+        service._run = fake_run
+
+        service.list_pellet_bags_with_meaningful_status("density_status")
+
+        self.assertIn("COALESCE(density_assignee_email, created_by)", captured["query"])
+
+    def test_update_status_and_assignee_uses_whitelisted_mapping_fields(self) -> None:
+        # Ensure inline status updates only touch one mapped status column and one mapped assignee column.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+
+        captured = {}
+
+        class _FakeResult:
+            num_dml_affected_rows = 1
+
+            def result(self):
+                return []
+
+        def fake_run(query, params):
+            captured["query"] = query
+            return _FakeResult()
+
+        service._run = fake_run
+
+        updated = service.update_pellet_bag_status_and_assignee(
+            pellet_bag_code="PB-1",
+            status_column="long_moisture_status",
+            status_value="Received",
+            assigned_value="qa@notpla.com",
+            updated_by="qa@notpla.com",
+        )
+
+        self.assertIn("long_moisture_status = @status_value", captured["query"])
+        self.assertIn("long_moisture_assignee_email = @assigned_value", captured["query"])
+        self.assertEqual(updated["status_value"], "Received")
 
 
 if __name__ == "__main__":
