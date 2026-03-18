@@ -369,8 +369,15 @@ class BigQueryService:
             if field in filters:
                 where.append(f"{field} = @{field}")
                 params.append(bigquery.ScalarQueryParameter(field, "STRING" if isinstance(filters[field], str) else "INT64", filters[field]))
+        # Only emit a WHERE clause when at least one filter predicate has been requested.
         where_clause = f"WHERE {' AND '.join(where)}" if where else ""
-        query = f"SELECT * FROM `{self.dataset}.ingredients` {where_clause} ORDER BY sku"
+        # Sort by the numeric sequence field so ingredient rows follow the true business order instead of SKU text order.
+        # Add stable secondary keys to avoid row jitter when two records share the same sequence value.
+        query = (
+            f"SELECT * FROM `{self.dataset}.ingredients` "
+            f"{where_clause} "
+            "ORDER BY seq ASC, category_code ASC, pack_size_value ASC"
+        )
         rows = self._run(query, params).result()
         return [dict(row) for row in rows]
 
