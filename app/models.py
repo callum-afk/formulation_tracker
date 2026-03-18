@@ -4,6 +4,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, validator
 
+from app.constants import MATERIAL_WORKSTREAM_OPTIONS
+
 
 class ApiResponse(BaseModel):
     ok: bool
@@ -35,7 +37,51 @@ class IngredientBatchCreate(BaseModel):
 
 
 class IngredientSetCreate(BaseModel):
+    # Persist the selected ingredient members that define the formulation set hash.
     skus: List[str]
+    # Notes remain optional free text for lightweight formulation context.
+    notes: Optional[str] = None
+    # Material workstream is optional but limited to the reusable dropdown option list.
+    material_workstream: Optional[str] = None
+
+    @validator("notes", pre=True)
+    def normalize_set_notes(cls, value: Optional[str]) -> Optional[str]:
+        # Preserve plain text while trimming whitespace-only submissions down to null.
+        normalized = (value or "").strip()
+        return normalized or None
+
+    @validator("material_workstream", pre=True)
+    def normalize_material_workstream(cls, value: Optional[str]) -> Optional[str]:
+        # Normalize optional dropdown submissions and reject unsupported ad hoc values.
+        normalized = (value or "").strip()
+        if not normalized:
+            return None
+        if normalized not in MATERIAL_WORKSTREAM_OPTIONS:
+            raise ValueError("material_workstream must be one of the configured options")
+        return normalized
+
+
+class IngredientSetUpdate(BaseModel):
+    # Notes stay editable as optional plain text from the formulation-set detail panel.
+    notes: Optional[str] = None
+    # Material workstream stays editable through the shared dropdown option list.
+    material_workstream: Optional[str] = None
+
+    @validator("notes", pre=True)
+    def normalize_update_notes(cls, value: Optional[str]) -> Optional[str]:
+        # Reuse the same whitespace-trimming behavior for update requests.
+        normalized = (value or "").strip()
+        return normalized or None
+
+    @validator("material_workstream", pre=True)
+    def normalize_update_material_workstream(cls, value: Optional[str]) -> Optional[str]:
+        # Reuse the same dropdown validation for edit requests.
+        normalized = (value or "").strip()
+        if not normalized:
+            return None
+        if normalized not in MATERIAL_WORKSTREAM_OPTIONS:
+            raise ValueError("material_workstream must be one of the configured options")
+        return normalized
 
 
 class DryWeightItem(BaseModel):

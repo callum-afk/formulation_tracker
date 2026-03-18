@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from app.dependencies import get_bigquery, get_settings, get_storage
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.api.pellet_bags_api import DEFAULT_ASSIGNEE_EMAILS, STATUS_LIST_COLUMN_WHITELIST, get_allowed_status_options, normalize_status_value
+from app.constants import MATERIAL_WORKSTREAM_OPTIONS
 from app.services.bigquery_service import BigQueryService
 from app.services.storage_service import StorageService
 
@@ -186,7 +187,12 @@ async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquer
     items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "sets.html",
-        {"request": request, "title": "Formulation Sets", "items": items},
+        {
+            "request": request,
+            "title": "Formulation Sets",
+            "items": items,
+            "material_workstream_options": MATERIAL_WORKSTREAM_OPTIONS,
+        },
     )
 
 

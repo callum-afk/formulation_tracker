@@ -653,6 +653,14 @@ table tbody tr:hover td {
   font-weight: 700;
 }
 
+/* Truncated table cells keep wide free-text values readable without destabilizing column widths. */
+.table-truncate {
+  max-width: 20rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Utility spacing for compact stacked forms and action groups across templates. */
 .form-stack {
   display: grid;

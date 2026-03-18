@@ -126,6 +126,7 @@ class BigQueryService:
             "conversion1_how": {"conversion1_how_code", "context_code", "process_code", "processing_code", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
             "conversion1_products": {"product_code", "conversion1_how_code", "product_suffix", "storage_location", "notes", "number_units_produced", "numbered_in_order", "tensile_rigid_status", "tensile_films_status", "seal_strength_status", "shelf_stability_status", "solubility_status", "defect_analysis_status", "blocking_status", "film_emc_status", "friction_status", "width_mm", "length_m", "avg_film_thickness_um", "sd_film_thickness", "film_thickness_variation_percent", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
             "conversion1_product_counter": {"id", "next_suffix", "updated_at"},
+            "ingredient_sets": {"set_code", "set_hash", "created_at", "created_by", "notes", "material_workstream"},
         }
 
         # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
@@ -519,11 +520,20 @@ class BigQueryService:
             return row["set_code"]
         return None
 
-    def insert_set(self, set_code: str, set_hash: str, skus: Iterable[str], created_by: Optional[str]) -> None:
+    def insert_set(
+        self,
+        set_code: str,
+        set_hash: str,
+        skus: Iterable[str],
+        created_by: Optional[str],
+        notes: Optional[str],
+        material_workstream: Optional[str],
+    ) -> None:
+        # Capture one timestamp for the parent row and all child rows so a newly created set stays consistent.
         now = datetime.now(timezone.utc)
         insert_set_query = (
-            f"INSERT `{self.dataset}.ingredient_sets` (set_code, set_hash, created_at, created_by) "
-            "VALUES (@set_code, @set_hash, @created_at, @created_by)"
+            f"INSERT `{self.dataset}.ingredient_sets` (set_code, set_hash, created_at, created_by, notes, material_workstream) "
+            "VALUES (@set_code, @set_hash, @created_at, @created_by, @notes, @material_workstream)"
         )
         self._run(
             insert_set_query,
@@ -532,6 +542,8 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("set_hash", "STRING", set_hash),
                 bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", now),
                 bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
+                bigquery.ScalarQueryParameter("notes", "STRING", notes),
+                bigquery.ScalarQueryParameter("material_workstream", "STRING", material_workstream),
             ],
         ).result()
         insert_items_query = (
@@ -548,6 +560,29 @@ class BigQueryService:
                     bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
                 ],
             ).result()
+
+    def update_set(
+        self,
+        set_code: str,
+        notes: Optional[str],
+        material_workstream: Optional[str],
+        updated_by: Optional[str],
+    ) -> None:
+        # Update only parent-row metadata so the item membership and set hash remain unchanged.
+        query = (
+            f"UPDATE `{self.dataset}.ingredient_sets` "
+            "SET notes = @notes, material_workstream = @material_workstream, created_by = COALESCE(created_by, @updated_by) "
+            "WHERE set_code = @set_code"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("notes", "STRING", notes),
+                bigquery.ScalarQueryParameter("material_workstream", "STRING", material_workstream),
+                bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
+                bigquery.ScalarQueryParameter("set_code", "STRING", set_code),
+            ],
+        ).result()
 
     def list_sets_paginated(self, search: Optional[str], page: int, page_size: int) -> Tuple[List[Dict[str, Any]], int]:
         # Support set lookup by set code or contained SKU while keeping a single source of query truth.

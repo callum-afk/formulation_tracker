@@ -6,6 +6,15 @@ DEFAULT_PAGE_SIZE = 50
 # Global upper bound to protect APIs from excessively large page requests.
 MAX_PAGE_SIZE = 200
 
+# Reusable formulation-set material workstream options keep dropdown values consistent across UI and API layers.
+MATERIAL_WORKSTREAM_OPTIONS = [
+    "Compounding",
+    "Pellet Bags",
+    "Conversion 1",
+    "Injection Moulding",
+    "Film Forming",
+]
+
 # Canonical failure-mode options shared by compounding and conversion workflows.
 FAILURE_MODES = [
     "N/A",
