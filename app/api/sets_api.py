@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_actor, get_bigquery, get_settings
-from app.models import ApiResponse, IngredientSetCreate
+from app.models import ApiResponse, IngredientSetCreate, IngredientSetUpdate
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import int_to_code
 from app.services.hashing_service import hash_set
@@ -29,13 +29,39 @@ def create_set(
     set_hash = hash_set(payload.skus)
     existing = bigquery.get_set_by_hash(set_hash)
     if existing:
-        return ApiResponse(ok=True, data={"set_code": existing, "skus": payload.skus})
+        # Keep the existing deduplicated set while still allowing metadata-only saves on duplicate hashes.
+        if payload.notes is not None or payload.material_workstream is not None:
+            bigquery.update_set(existing, payload.notes, payload.material_workstream, actor.email if actor else None)
+        return ApiResponse(
+            ok=True,
+            data={
+                "set_code": existing,
+                "skus": payload.skus,
+                "notes": payload.notes,
+                "material_workstream": payload.material_workstream,
+            },
+        )
 
     # Allocate the next user-facing code and persist both parent and item rows.
     next_value = bigquery.allocate_counter("set_code", "", settings.code_start_set)
     set_code = int_to_code(next_value)
-    bigquery.insert_set(set_code, set_hash, payload.skus, actor.email if actor else None)
-    return ApiResponse(ok=True, data={"set_code": set_code, "skus": payload.skus})
+    bigquery.insert_set(
+        set_code,
+        set_hash,
+        payload.skus,
+        actor.email if actor else None,
+        payload.notes,
+        payload.material_workstream,
+    )
+    return ApiResponse(
+        ok=True,
+        data={
+            "set_code": set_code,
+            "skus": payload.skus,
+            "notes": payload.notes,
+            "material_workstream": payload.material_workstream,
+        },
+    )
 
 
 @router.get("", response_model=ApiResponse)
@@ -56,3 +82,21 @@ def get_set(set_code: str, bigquery: BigQueryService = Depends(get_bigquery)) ->
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
     return ApiResponse(ok=True, data=row)
+
+
+@router.put("/{set_code}", response_model=ApiResponse)
+def update_set(
+    set_code: str,
+    payload: IngredientSetUpdate,
+    bigquery: BigQueryService = Depends(get_bigquery),
+    actor=Depends(get_actor),
+) -> ApiResponse:
+    # Require an existing formulation set before applying metadata updates from the detail editor.
+    row = bigquery.get_set(set_code)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
+
+    # Persist optional notes and material-workstream changes to the parent set row only.
+    bigquery.update_set(set_code, payload.notes, payload.material_workstream, actor.email if actor else None)
+    updated = bigquery.get_set(set_code)
+    return ApiResponse(ok=True, data=updated)

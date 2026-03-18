@@ -24,6 +24,26 @@ async function postJson(url, payload) {
   return data.data;
 }
 
+async function putJson(url, payload) {
+  // Submit JSON update payloads through a shared helper so error handling matches create flows.
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const rawBody = await response.text();
+  let data;
+  try {
+    data = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    throw new Error(rawBody || response.statusText || 'Unexpected server response');
+  }
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || data.detail || response.statusText);
+  }
+  return data.data;
+}
+
 async function fetchJson(url, init = undefined) {
   // Load JSON payloads while handling plain-text backend errors without JSON parse crashes.
   const response = await fetch(url, init);
@@ -517,9 +537,27 @@ function attachSetForm() {
   const nextButton = document.getElementById('sets-next-page');
   const pageLabel = document.getElementById('sets-page-label');
   const paginationContainer = document.getElementById('sets-pagination');
+  const detailPanel = document.getElementById('set-detail-panel');
+  const detailForm = document.getElementById('set-detail-form');
+  const detailStatus = document.getElementById('set-detail-status');
   let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
+
+  // Populate the detail panel so users can review full notes and edit metadata for one set.
+  async function loadSetDetail(setCode) {
+    const item = await fetchJson(`/api/sets/${encodeURIComponent(setCode)}`);
+    if (!detailPanel || !detailForm) return;
+    document.getElementById('set-detail-code').textContent = item.set_code || '';
+    document.getElementById('set-detail-owner').textContent = item.created_by || 'Unknown';
+    document.getElementById('set-detail-created').textContent = formatTimestampForTable(item.created_at);
+    document.getElementById('set-detail-skus').textContent = Array.isArray(item.sku_list) ? item.sku_list.join(', ') : '';
+    document.getElementById('set-detail-set-code').value = item.set_code || '';
+    document.getElementById('set-detail-material-workstream').value = item.material_workstream || '';
+    document.getElementById('set-detail-notes').value = item.notes || '';
+    detailStatus.textContent = '';
+    detailPanel.hidden = false;
+  }
 
   // Keep dynamic SKU field growth so users can include more than the six default selectors.
   if (addButton && selectsContainer && template) {
@@ -539,14 +577,20 @@ function attachSetForm() {
       return;
     }
     try {
-      await postJson('/api/sets', { skus });
+      // Include optional metadata fields when creating formulation sets from the entry form.
+      await postJson('/api/sets', {
+        skus,
+        material_workstream: (new FormData(form).get('material_workstream') || '').toString().trim(),
+        notes: (new FormData(form).get('notes') || '').toString().trim(),
+      });
+      form.reset();
       await loadSets(1);
     } catch (error) {
       alert(error.message);
     }
   });
 
-  // Render the paged set list with owner and created timestamp columns.
+  // Render the paged set list with metadata columns and per-row detail actions.
   async function loadSets(targetPage) {
     const params = new URLSearchParams();
     const q = filterForm ? (new FormData(filterForm).get('q') || '').toString().trim() : '';
@@ -570,7 +614,7 @@ function attachSetForm() {
     if (items.length === 0) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 4;
+      cell.colSpan = 7;
       cell.textContent = 'No sets found.';
       row.appendChild(cell);
       output.appendChild(row);
@@ -583,12 +627,31 @@ function attachSetForm() {
         ownerCell.textContent = item.created_by || 'Unknown';
         const createdCell = document.createElement('td');
         createdCell.textContent = formatTimestampForTable(item.created_at);
+        const materialWorkstreamCell = document.createElement('td');
+        materialWorkstreamCell.textContent = item.material_workstream || '';
+        const notesCell = document.createElement('td');
+        // Keep the table compact by truncating long notes while exposing the full text on hover and in detail view.
+        notesCell.textContent = item.notes || '';
+        notesCell.className = 'table-truncate';
+        notesCell.title = item.notes || '';
         const skusCell = document.createElement('td');
         skusCell.textContent = Array.isArray(item.sku_list) ? item.sku_list.join(', ') : '';
+        const actionsCell = document.createElement('td');
+        const editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.textContent = 'View / Edit';
+        // Load the full set record into the detail panel on demand to keep the list request lightweight.
+        editButton.addEventListener('click', () => {
+          loadSetDetail(item.set_code).catch((error) => alert(error.message));
+        });
+        actionsCell.appendChild(editButton);
         row.appendChild(setCodeCell);
         row.appendChild(ownerCell);
         row.appendChild(createdCell);
+        row.appendChild(materialWorkstreamCell);
+        row.appendChild(notesCell);
         row.appendChild(skusCell);
+        row.appendChild(actionsCell);
         output.appendChild(row);
       });
     }
@@ -628,6 +691,33 @@ function attachSetForm() {
     pageSize = nextSize;
     loadSets(1).catch((error) => alert(error.message));
   });
+
+
+  // Save editable set metadata from the detail panel without changing SKU membership.
+  if (detailForm) {
+    detailForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(detailForm);
+      const setCode = (formData.get('set_code') || '').toString().trim();
+      if (!setCode) {
+        alert('Load a set before saving changes.');
+        return;
+      }
+      try {
+        const updated = await putJson(`/api/sets/${encodeURIComponent(setCode)}`, {
+          material_workstream: (formData.get('material_workstream') || '').toString().trim(),
+          notes: (formData.get('notes') || '').toString().trim(),
+        });
+        detailStatus.textContent = 'Saved.';
+        document.getElementById('set-detail-material-workstream').value = updated.material_workstream || '';
+        document.getElementById('set-detail-notes').value = updated.notes || '';
+        await loadSets(page);
+      } catch (error) {
+        detailStatus.textContent = '';
+        alert(error.message);
+      }
+    });
+  }
 
   // Load the first page immediately so existing sets are always visible by default.
   loadSets(1).catch((error) => {

@@ -16,6 +16,21 @@
       </label>
       {% endfor %}
     </div>
+    <div class="grid">
+      {# Shared dropdown options are supplied by the route to avoid hardcoding values in the template. #}
+      <label>Material Workstream
+        <select name="material_workstream">
+          <option value="">Optional</option>
+          {% for option in material_workstream_options %}
+          <option value="{{ option }}">{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {# Notes stay plain text and are shown in full within the editor panel below. #}
+      <label>Notes
+        <textarea name="notes" rows="4" placeholder="Optional notes"></textarea>
+      </label>
+    </div>
     <button type="button" id="add-sku-select">Add another SKU</button>
     <button type="submit">Create set</button>
   </form>
@@ -44,11 +59,14 @@
         <th>Set code</th>
         <th>Owner</th>
         <th>Created</th>
+        <th>Material Workstream</th>
+        <th>Notes</th>
         <th>SKUs</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody id="sets-results">
-      <tr><td colspan="4">No sets loaded.</td></tr>
+      <tr><td colspan="7">No sets loaded.</td></tr>
     </tbody>
   </table>
   <div class="inline-actions" id="sets-pagination">
@@ -56,5 +74,37 @@
     <span id="sets-page-label">Page 1</span>
     <button type="button" id="sets-next-page">Next</button>
   </div>
+</section>
+
+<section class="panel" id="set-detail-panel" hidden>
+  <h2>Formulation set detail</h2>
+  {# Metadata cards show the current saved values while the editor below enables updates. #}
+  <dl class="detail-grid" id="set-detail-summary">
+    <div><dt>Set code</dt><dd id="set-detail-code">-</dd></div>
+    <div><dt>Owner</dt><dd id="set-detail-owner">-</dd></div>
+    <div><dt>Created</dt><dd id="set-detail-created">-</dd></div>
+    <div><dt>SKUs</dt><dd id="set-detail-skus">-</dd></div>
+  </dl>
+  <form id="set-detail-form" class="form-stack">
+    {# Hidden code field keeps save requests tied to the currently loaded formulation set. #}
+    <input type="hidden" name="set_code" id="set-detail-set-code" />
+    <div class="grid">
+      <label>Material Workstream
+        <select name="material_workstream" id="set-detail-material-workstream">
+          <option value="">Optional</option>
+          {% for option in material_workstream_options %}
+          <option value="{{ option }}">{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Notes
+        <textarea name="notes" id="set-detail-notes" rows="5" placeholder="Optional notes"></textarea>
+      </label>
+    </div>
+    <div class="inline-actions">
+      <button type="submit">Save changes</button>
+      <span id="set-detail-status"></span>
+    </div>
+  </form>
 </section>
 {% endblock %}
