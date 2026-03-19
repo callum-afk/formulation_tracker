@@ -135,6 +135,25 @@ function parseList(value, separator = ',') {
     .filter(Boolean);
 }
 
+
+function normalizeSetRow(item) {
+  // Clone the row before applying UI-only fallback cleanup so API payloads stay untouched elsewhere.
+  const normalizedItem = { ...item };
+  // Normalize SKU values into one display string regardless of whether the API returns an array or CSV text.
+  const skuList = Array.isArray(normalizedItem.sku_list)
+    ? normalizedItem.sku_list.filter(Boolean)
+    : parseList((normalizedItem.sku_list || '').toString());
+  // Detect legacy malformed rows where the material-workstream column was populated with comma-separated SKU codes.
+  const materialLooksLikeSkuList = !skuList.length && parseList((normalizedItem.material_workstream || '').toString()).every((value) => /\d_\d{4}_\d{2}/.test(value) || /^[A-Z0-9_]+$/.test(value));
+  if (materialLooksLikeSkuList) {
+    // Move the misplaced SKU text into sku_list so the table columns render the expected data under the right heading.
+    normalizedItem.sku_list = parseList((normalizedItem.material_workstream || '').toString());
+    // Clear the incorrect material-workstream value instead of showing SKU codes in the wrong column.
+    normalizedItem.material_workstream = '';
+  }
+  return normalizedItem;
+}
+
 // Format timestamps into HH:MM:SS  - DD/MM/YYYY so every table shows one global date pattern.
 function formatTimestampForTable(rawValue) {
   if (!rawValue) return '';
@@ -620,37 +639,40 @@ function attachSetForm() {
       output.appendChild(row);
     } else {
       items.forEach((item) => {
+        // Normalize each row before rendering so legacy malformed metadata still lands in the intended columns.
+        const normalizedItem = normalizeSetRow(item);
         const row = document.createElement('tr');
         const setCodeCell = document.createElement('td');
-        setCodeCell.textContent = item.set_code || '';
+        setCodeCell.textContent = normalizedItem.set_code || '';
         const ownerCell = document.createElement('td');
         ownerCell.textContent = item.created_by || 'Unknown';
         const createdCell = document.createElement('td');
         createdCell.textContent = formatTimestampForTable(item.created_at);
         const materialWorkstreamCell = document.createElement('td');
-        materialWorkstreamCell.textContent = item.material_workstream || '';
+        materialWorkstreamCell.textContent = normalizedItem.material_workstream || '';
         const notesCell = document.createElement('td');
         // Keep the table compact by truncating long notes while exposing the full text on hover and in detail view.
-        notesCell.textContent = item.notes || '';
+        notesCell.textContent = normalizedItem.notes || '';
         notesCell.className = 'table-truncate';
-        notesCell.title = item.notes || '';
+        notesCell.title = normalizedItem.notes || '';
         const skusCell = document.createElement('td');
-        skusCell.textContent = Array.isArray(item.sku_list) ? item.sku_list.join(', ') : '';
+        skusCell.textContent = Array.isArray(normalizedItem.sku_list) ? normalizedItem.sku_list.join(', ') : parseList((normalizedItem.sku_list || '').toString()).join(', ');
         const actionsCell = document.createElement('td');
         const editButton = document.createElement('button');
         editButton.type = 'button';
         editButton.textContent = 'View / Edit';
         // Load the full set record into the detail panel on demand to keep the list request lightweight.
         editButton.addEventListener('click', () => {
-          loadSetDetail(item.set_code).catch((error) => alert(error.message));
+          loadSetDetail(normalizedItem.set_code).catch((error) => alert(error.message));
         });
         actionsCell.appendChild(editButton);
         row.appendChild(setCodeCell);
         row.appendChild(ownerCell);
         row.appendChild(createdCell);
+        // Match the requested table order: Material Workstream, SKUs, then Notes.
         row.appendChild(materialWorkstreamCell);
-        row.appendChild(notesCell);
         row.appendChild(skusCell);
+        row.appendChild(notesCell);
         row.appendChild(actionsCell);
         output.appendChild(row);
       });
