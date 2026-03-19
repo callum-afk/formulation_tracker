@@ -8,11 +8,19 @@ MAX_PAGE_SIZE = 200
 
 # Reusable formulation-set material workstream options keep dropdown values consistent across UI and API layers.
 MATERIAL_WORKSTREAM_OPTIONS = [
-    "Compounding",
-    "Pellet Bags",
-    "Conversion 1",
-    "Injection Moulding",
-    "Film Forming",
+    # Keep the dropdown choices aligned with the current formulation workstream list provided in the launch screenshot.
+    "83F1",
+    "High Durability",
+    "Low Viscosity",
+    "Low Cost",
+    "SWS",
+    "GP",
+    "Whole seaweed biomass",
+    "Innovation BA project",
+    "BIOMAC",
+    "Inno - high barrier project",
+    "Next Gen Rigid",
+    "Golf Tees",
 ]
 
 # Canonical failure-mode options shared by compounding and conversion workflows.
