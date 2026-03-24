@@ -13,7 +13,8 @@
   </div>
   {% endif %}
   <!-- One form supports both generate-only and save actions via distinct submit buttons. -->
-  <form method="post" class="form-stack">
+  <!-- Native form submit posts to server-rendered endpoint, so mark it for native pending lifecycle ownership. -->
+  <form method="post" class="form-stack" data-native-submit="true">
     <!-- Grid layout keeps all required How fields compact and aligned. -->
     <div class="grid">
       <!-- Dropdown supports selecting an already-created full context code. -->
