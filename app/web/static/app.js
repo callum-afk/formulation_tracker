@@ -115,6 +115,50 @@ function markAsyncSubmitForm(form) {
   form.dataset.asyncSubmit = 'true';
 }
 
+// Convert API error payloads into readable user-facing messages, including FastAPI validation detail arrays.
+function formatApiErrorMessage(data, fallbackMessage) {
+  // Prefer explicit `error` strings emitted by JSON endpoints when available.
+  if (typeof data?.error === 'string' && data.error.trim()) {
+    return data.error.trim();
+  }
+  // Normalize `detail` payloads that might be strings, objects, or FastAPI validation arrays.
+  const detail = data?.detail;
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail.trim();
+  }
+  // Expand list-based validation errors into semicolon-separated "field: message" segments.
+  if (Array.isArray(detail) && detail.length > 0) {
+    const messages = detail.map((entry) => {
+      // Keep object entries readable by extracting location and message fields when present.
+      if (entry && typeof entry === 'object') {
+        const locationParts = Array.isArray(entry.loc)
+          ? entry.loc.map((part) => String(part)).filter(Boolean)
+          : [];
+        const location = locationParts.join('.');
+        const message = (entry.msg || entry.message || '').toString().trim();
+        if (location && message) {
+          return `${location}: ${message}`;
+        }
+        if (message) {
+          return message;
+        }
+        return JSON.stringify(entry);
+      }
+      // Fall back to string conversion for non-object detail entries.
+      return String(entry);
+    }).filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join('; ');
+    }
+  }
+  // Preserve useful detail objects even when they do not match FastAPI's usual validation shape.
+  if (detail && typeof detail === 'object') {
+    return JSON.stringify(detail);
+  }
+  // Use the provided fallback as the final message when no structured error content is present.
+  return fallbackMessage || 'Request failed';
+}
+
 async function postJson(url, payload) {
   // Submit JSON payloads and gracefully surface non-JSON server errors.
   const response = await fetch(url, {
@@ -130,7 +174,7 @@ async function postJson(url, payload) {
     throw new Error(rawBody || response.statusText || 'Unexpected server response');
   }
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || data.detail || response.statusText);
+    throw new Error(formatApiErrorMessage(data, response.statusText));
   }
   return data.data;
 }
@@ -150,7 +194,7 @@ async function putJson(url, payload) {
     throw new Error(rawBody || response.statusText || 'Unexpected server response');
   }
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || data.detail || response.statusText);
+    throw new Error(formatApiErrorMessage(data, response.statusText));
   }
   return data.data;
 }
@@ -166,7 +210,7 @@ async function fetchJson(url, init = undefined) {
     throw new Error(rawBody || response.statusText || 'Unexpected server response');
   }
   if (!response.ok || !data.ok) {
-    throw new Error(data.error || data.detail || response.statusText);
+    throw new Error(formatApiErrorMessage(data, response.statusText));
   }
   return data.data;
 }
@@ -372,13 +416,18 @@ function attachIngredientForm() {
   const status = document.getElementById('ingredient-form-status');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Capture all submit values before pending-state disables controls so FormData remains complete.
+    const formData = new FormData(form);
+    // Extract optional file handle from pre-captured FormData for upload chaining.
+    const msdsFile = formData.get('msds_file');
+    // Remove binary file field before converting remaining entries to JSON payload values.
+    formData.delete('msds_file');
+    // Build the request payload from the captured pre-pending form snapshot.
+    const payload = Object.fromEntries(formData.entries());
+    // Normalize numeric fields into numbers to preserve existing backend contract.
+    payload.category_code = Number(payload.category_code);
+    payload.pack_size_value = Number(payload.pack_size_value);
     await withPendingState(form, async () => {
-      const formData = new FormData(form);
-      const msdsFile = formData.get('msds_file');
-      formData.delete('msds_file');
-      const payload = Object.fromEntries(formData.entries());
-      payload.category_code = Number(payload.category_code);
-      payload.pack_size_value = Number(payload.pack_size_value);
       try {
         status.textContent = 'Creating SKU...';
         const created = await postJson('/api/ingredients', payload);
@@ -493,19 +542,25 @@ function attachBatchForm() {
   markAsyncSubmitForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Capture all form controls before pending-state disables inputs so FormData includes required fields.
+    const formData = new FormData(form);
+    // Capture optional CoA file from the pre-pending FormData snapshot.
+    const coaFile = formData.get('coa_file');
+    // Remove binary field from JSON conversion payload.
+    formData.delete('coa_file');
+    // Build payload from captured FormData entries to avoid disabled-control omission.
+    const payload = Object.fromEntries(formData.entries());
+    // Keep existing quantity coercion and empty-field pruning semantics.
+    if (payload.quantity_value === '') {
+      delete payload.quantity_value;
+    } else if (payload.quantity_value !== undefined) {
+      payload.quantity_value = Number(payload.quantity_value);
+    }
+    // Continue omitting blank quantity units so API defaults remain unchanged.
+    if (payload.quantity_unit === '') {
+      delete payload.quantity_unit;
+    }
     await withPendingState(form, async () => {
-      const formData = new FormData(form);
-      const coaFile = formData.get('coa_file');
-      formData.delete('coa_file');
-      const payload = Object.fromEntries(formData.entries());
-      if (payload.quantity_value === '') {
-        delete payload.quantity_value;
-      } else if (payload.quantity_value !== undefined) {
-        payload.quantity_value = Number(payload.quantity_value);
-      }
-      if (payload.quantity_unit === '') {
-        delete payload.quantity_unit;
-      }
       try {
         await postJson('/api/ingredient_batches', payload);
         if (coaFile && coaFile.size > 0) {
@@ -759,6 +814,11 @@ function attachSetForm() {
     event.preventDefault();
     const selects = Array.from(form.querySelectorAll('select[name="skus"]'));
     const skus = selects.map((select) => select.value.trim()).filter(Boolean);
+    // Snapshot metadata fields before pending-state disables controls and excludes them from FormData.
+    const formData = new FormData(form);
+    // Precompute optional metadata strings from the captured FormData snapshot.
+    const materialWorkstream = (formData.get('material_workstream') || '').toString().trim();
+    const notes = (formData.get('notes') || '').toString().trim();
     if (skus.length === 0) {
       alert('Select at least one SKU.');
       return;
@@ -768,8 +828,8 @@ function attachSetForm() {
         // Include optional metadata fields when creating formulation sets from the entry form.
         const created = await postJson('/api/sets', {
           skus,
-          material_workstream: (new FormData(form).get('material_workstream') || '').toString().trim(),
-          notes: (new FormData(form).get('notes') || '').toString().trim(),
+          material_workstream: materialWorkstream,
+          notes,
         });
         form.reset();
         await loadSets(1);
