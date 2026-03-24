@@ -20,6 +20,13 @@ function ensurePendingOverlay() {
   return overlay;
 }
 
+// Mark each control with a durable original-disabled snapshot so submit cleanup can restore only what this script changed.
+function snapshotControlDisabledState(control) {
+  if (!control.dataset.pendingOriginalDisabled) {
+    control.dataset.pendingOriginalDisabled = control.disabled ? '1' : '0';
+  }
+}
+
 // Disable all submit-capable controls inside the provided scope while an async request is in-flight.
 function setScopePendingState(scope, pending) {
   if (!scope) return;
@@ -28,33 +35,75 @@ function setScopePendingState(scope, pending) {
   controls.forEach((control) => {
     // Respect explicit read-only fields while still preventing duplicate submit actions on mutable controls.
     if (pending) {
-      control.dataset.pendingWasDisabled = control.disabled ? '1' : '0';
+      snapshotControlDisabledState(control);
       control.disabled = true;
-    } else if (control.dataset.pendingWasDisabled === '0') {
-      control.disabled = false;
+    } else {
+      // Restore controls only when they started enabled so originally-disabled fields remain untouched.
+      if (control.dataset.pendingOriginalDisabled === '0') {
+        control.disabled = false;
+      }
+      // Remove transient flags once pending state is cleared to avoid stale state leaks across repeated submits.
+      delete control.dataset.pendingOriginalDisabled;
     }
   });
 }
 
-// Wrap async submit actions in one shared pending-state pattern with overlay, disabled controls, and duplicate protection.
-async function withPendingState(scope, action) {
+// Show global pending UI and disable controls for one scope while counting concurrent operations.
+function showPendingState(scope) {
   if (!scope || scope.dataset.pendingSubmit === '1') {
-    return null;
+    return false;
   }
   const overlay = ensurePendingOverlay();
   scope.dataset.pendingSubmit = '1';
   setScopePendingState(scope, true);
   activeSubmitOperations += 1;
   overlay.hidden = false;
+  return true;
+}
+
+// Clear global pending UI and re-enable controls for one scope, hiding the overlay only when no operations remain.
+function clearPendingState(scope) {
+  if (!scope || scope.dataset.pendingSubmit !== '1') {
+    return;
+  }
+  const overlay = ensurePendingOverlay();
+  scope.dataset.pendingSubmit = '0';
+  setScopePendingState(scope, false);
+  activeSubmitOperations = Math.max(0, activeSubmitOperations - 1);
+  if (activeSubmitOperations === 0) {
+    overlay.hidden = true;
+  }
+}
+
+// Reset all pending markers on fresh page initialisation so normal form redirects/reloads never keep stale overlays.
+function resetGlobalPendingState() {
+  activeSubmitOperations = 0;
+  const overlay = document.getElementById('global-submit-overlay');
+  if (overlay) {
+    overlay.hidden = true;
+  }
+  // Clear any lingering submit flags and disabled controls in case browser restoration preserved old DOM state.
+  const pendingScopes = Array.from(document.querySelectorAll('[data-pending-submit="1"], .is-submit-pending'));
+  pendingScopes.forEach((scope) => {
+    scope.dataset.pendingSubmit = '0';
+    setScopePendingState(scope, false);
+  });
+}
+
+// Wrap async submit actions in one shared pending-state pattern with overlay, disabled controls, and duplicate protection.
+async function withPendingState(scope, action) {
+  if (!scope) {
+    return null;
+  }
+  const started = showPendingState(scope);
+  if (!started) {
+    return null;
+  }
   try {
     return await action();
   } finally {
-    scope.dataset.pendingSubmit = '0';
-    setScopePendingState(scope, false);
-    activeSubmitOperations = Math.max(0, activeSubmitOperations - 1);
-    if (activeSubmitOperations === 0) {
-      overlay.hidden = true;
-    }
+    // Always clear pending state for fetch/AJAX flows even on thrown errors and early returns.
+    clearPendingState(scope);
   }
 }
 
@@ -2717,10 +2766,42 @@ function attachSidebarNavigation() {
   window.localStorage.setItem(storageKey, JSON.stringify(nextState));
 }
 
+// Bind default browser form submits (POST/PUT/PATCH/DELETE) to shared pending UI without interrupting native navigation.
+function attachNativeSubmitPendingState() {
+  // Use one delegated listener so existing and future server-rendered forms all share consistent pending behaviour.
+  document.addEventListener('submit', (event) => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form) return;
+    // Skip prevented submits because fetch/AJAX handlers already manage pending state via withPendingState().
+    if (event.defaultPrevented) return;
+    // Exclude GET forms so search/filter flows stay lightweight and non-blocking by default.
+    const method = (form.getAttribute('method') || 'get').toLowerCase();
+    if (method === 'get') return;
+    // Skip forms that intentionally post to a new tab/window since overlay should not lock the current page.
+    const target = (form.getAttribute('target') || '').toLowerCase();
+    if (target && target !== '_self') return;
+    // Apply global pending UI for native submits; cleanup occurs on next page initialisation.
+    showPendingState(form);
+  });
+}
+
+// Clear stale pending UI during initial load and BFCache restores so overlay never survives across navigations.
+function attachPendingStateResetHandlers() {
+  // Run once during normal script bootstrap.
+  resetGlobalPendingState();
+  // Re-run after back/forward restores where browser may reuse prior DOM snapshots.
+  window.addEventListener('pageshow', () => {
+    resetGlobalPendingState();
+  });
+}
+
 // Apply reusable sticky/scroll behavior to server-rendered tables that exist on initial page load.
 Array.from(document.querySelectorAll('table')).forEach((table) => {
   decorateReusableTable(table, 0);
 });
+
+attachPendingStateResetHandlers();
+attachNativeSubmitPendingState();
 
 attachIngredientForm();
 attachIngredientImportForm();
