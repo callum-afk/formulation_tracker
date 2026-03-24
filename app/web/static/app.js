@@ -107,6 +107,17 @@ async function withPendingState(scope, action) {
   }
 }
 
+// Wait for one browser paint cycle after pending teardown so blocking alerts open only after overlay visibility updates.
+async function waitForNextPaint() {
+  // Use two animation frames because the first schedules style/layout work and the second reliably paints the cleared overlay.
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      // Queue a second frame to maximize repaint reliability across browsers before triggering blocking dialogs.
+      requestAnimationFrame(resolve);
+    });
+  });
+}
+
 // Mark forms that manage submit lifecycle in JavaScript so global native submit handling can skip them.
 function markAsyncSubmitForm(form) {
   // Only annotate real form elements because callers may pass null during conditional setup paths.
@@ -540,6 +551,8 @@ function attachIngredientImportForm() {
     });
     // Show success alert only after withPendingState() has cleared pending state and overlay UI.
     if (successMessage) {
+      // Ensure the overlay removal is visibly painted before opening the blocking success alert.
+      await waitForNextPaint();
       alert(successMessage);
     }
     // Perform redirect after success popup so users keep the existing acknowledgement flow.
@@ -601,6 +614,8 @@ function attachBatchForm() {
     });
     // Keep success popup behavior while ensuring overlay is already cleared.
     if (successMessage) {
+      // Wait for repaint so users can see pending overlay disappear before the popup blocks rendering.
+      await waitForNextPaint();
       alert(successMessage);
     }
   });
@@ -864,6 +879,8 @@ function attachSetForm() {
     });
     // Show success popup only after pending overlay is fully cleared.
     if (successMessage) {
+      // Pause for a paint tick so the overlay teardown is visible before showing the success popup.
+      await waitForNextPaint();
       alert(successMessage);
     }
   });
@@ -1028,6 +1045,8 @@ function attachSetForm() {
       });
       // Preserve success confirmation while ensuring pending UI is already removed.
       if (successMessage) {
+        // Wait for pending UI repaint before showing the blocking alert dialog.
+        await waitForNextPaint();
         alert(successMessage);
       }
     });
@@ -1142,6 +1161,8 @@ function attachDryWeightForm() {
     });
     // Display success message only after withPendingState() finally clears overlay state.
     if (successMessage) {
+      // Yield until repaint so overlay clearing is visible before the alert appears.
+      await waitForNextPaint();
       alert(successMessage);
     }
   });
@@ -1303,6 +1324,8 @@ function attachBatchVariantForm() {
     });
     // Maintain success feedback while showing it only after overlay cleanup.
     if (successMessage) {
+      // Ensure overlay hide has painted before opening the blocking success modal.
+      await waitForNextPaint();
       alert(successMessage);
     }
   });
@@ -1885,6 +1908,8 @@ function attachLocationPartnerUtilityForm() {
     });
     // Keep success popup behavior but only after pending state is cleared.
     if (successMessage) {
+      // Wait for repaint so pending visuals clear before alert blocks the main thread.
+      await waitForNextPaint();
       alert(successMessage);
     }
   });
@@ -2059,6 +2084,8 @@ function attachCompoundingHowPage() {
         });
         // Show success alert after withPendingState() has finished clearing pending visuals.
         if (successMessage) {
+          // Ensure row-level pending UI updates paint before the blocking alert opens.
+          await waitForNextPaint();
           alert(successMessage);
         }
       });
@@ -2114,6 +2141,8 @@ function attachCompoundingHowPage() {
     });
     // Display success popup only once withPendingState() has removed pending UI.
     if (successMessage) {
+      // Let the browser repaint pending teardown before showing the success alert.
+      await waitForNextPaint();
       alert(successMessage);
     }
   });
@@ -2368,6 +2397,8 @@ function attachPelletBagsPage() {
         });
         // Show success confirmation after pending state cleanup.
         if (successMessage) {
+          // Wait for repaint so row pending indicators clear before the blocking dialog appears.
+          await waitForNextPaint();
           alert(successMessage);
         }
       });
@@ -2727,6 +2758,8 @@ function attachConversion1ProductsPage() {
         });
         // Keep success alert behavior while ensuring pending UI is already cleared.
         if (successMessage) {
+          // Allow one full paint before alert to prevent the overlay from appearing stuck underneath.
+          await waitForNextPaint();
           alert(successMessage);
         }
       });
