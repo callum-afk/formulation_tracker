@@ -506,6 +506,10 @@ function attachIngredientImportForm() {
   markAsyncSubmitForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Store success text outside the pending wrapper so alerts run only after overlay cleanup.
+    let successMessage = '';
+    // Track redirect intent so navigation can happen after pending UI teardown.
+    let shouldRedirectToIngredients = false;
     const formData = new FormData(form);
     const msdsFile = formData.get('msds_file');
     formData.delete('msds_file');
@@ -526,12 +530,22 @@ function attachIngredientImportForm() {
             throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
           }
         }
-        alert(`Imported SKU: ${sku}`);
-        window.location.href = '/ingredients';
+        // Save success state for post-pending UI feedback.
+        successMessage = `Imported SKU: ${sku}`;
+        // Delay redirect until after withPendingState() finally block clears the overlay.
+        shouldRedirectToIngredients = true;
       } catch (error) {
         alert(error.message);
       }
     });
+    // Show success alert only after withPendingState() has cleared pending state and overlay UI.
+    if (successMessage) {
+      alert(successMessage);
+    }
+    // Perform redirect after success popup so users keep the existing acknowledgement flow.
+    if (shouldRedirectToIngredients) {
+      window.location.href = '/ingredients';
+    }
   });
 }
 
@@ -542,6 +556,8 @@ function attachBatchForm() {
   markAsyncSubmitForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Capture success message for post-pending alert timing.
+    let successMessage = '';
     // Capture all form controls before pending-state disables inputs so FormData includes required fields.
     const formData = new FormData(form);
     // Capture optional CoA file from the pre-pending FormData snapshot.
@@ -577,11 +593,16 @@ function attachBatchForm() {
           }
         }
         form.reset();
-        alert(`Batch created: ${payload.ingredient_batch_code}`);
+        // Store success text and alert once pending cleanup has completed.
+        successMessage = `Batch created: ${payload.ingredient_batch_code}`;
       } catch (error) {
         alert(error.message);
       }
     });
+    // Keep success popup behavior while ensuring overlay is already cleared.
+    if (successMessage) {
+      alert(successMessage);
+    }
   });
 }
 
@@ -812,6 +833,8 @@ function attachSetForm() {
   // Submit set creation payload after collecting all non-empty selected SKU values.
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Capture success message so popup occurs after pending UI cleanup.
+    let successMessage = '';
     const selects = Array.from(form.querySelectorAll('select[name="skus"]'));
     const skus = selects.map((select) => select.value.trim()).filter(Boolean);
     // Snapshot metadata fields before pending-state disables controls and excludes them from FormData.
@@ -833,11 +856,16 @@ function attachSetForm() {
         });
         form.reset();
         await loadSets(1);
-        alert(`Set created: ${created.set_code || ''}`.trim());
+        // Save success text and delay alert until withPendingState() has finished.
+        successMessage = `Set created: ${created.set_code || ''}`.trim();
       } catch (error) {
         alert(error.message);
       }
     });
+    // Show success popup only after pending overlay is fully cleared.
+    if (successMessage) {
+      alert(successMessage);
+    }
   });
 
   // Render the paged set list with metadata columns and per-row detail actions.
@@ -979,6 +1007,8 @@ function attachSetForm() {
   // Allow admins to delete unreferenced sets directly from the detail panel.
   if (deleteButton && detailForm && detailPanel) {
     deleteButton.addEventListener('click', async () => {
+      // Capture success message so post-delete popup appears after pending cleanup.
+      let successMessage = '';
       const setCode = (new FormData(detailForm).get('set_code') || '').toString().trim();
       if (!setCode) {
         alert('Load a set before deleting.');
@@ -990,11 +1020,16 @@ function attachSetForm() {
           await fetchJson(`/api/sets/${encodeURIComponent(setCode)}`, { method: 'DELETE' });
           detailPanel.hidden = true;
           await loadSets(1);
-          alert(`Set deleted: ${setCode}`);
+          // Store success text and show it after withPendingState() clears the overlay.
+          successMessage = `Set deleted: ${setCode}`;
         } catch (error) {
           alert(error.message);
         }
       });
+      // Preserve success confirmation while ensuring pending UI is already removed.
+      if (successMessage) {
+        alert(successMessage);
+      }
     });
   }
 
@@ -1064,6 +1099,8 @@ function attachDryWeightForm() {
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Save success popup text outside pending block to avoid overlay/alert overlap.
+    let successMessage = '';
     let setCode;
     try {
       // Normalize set code before create so lowercase input (e.g. ab) posts correctly as AB.
@@ -1097,11 +1134,16 @@ function attachDryWeightForm() {
         form.reset();
         buildTable(entryContainer, ['SKU'], [], 'Load a set to enter dry weights.');
         totalOutput.textContent = '';
-        alert(`Dry weight variant created: ${created.weight_code || ''}`.trim());
+        // Defer success alert until pending state teardown is complete.
+        successMessage = `Dry weight variant created: ${created.weight_code || ''}`.trim();
       } catch (error) {
         alert(error.message);
       }
     });
+    // Display success message only after withPendingState() finally clears overlay state.
+    if (successMessage) {
+      alert(successMessage);
+    }
   });
 }
 
@@ -1111,6 +1153,8 @@ function attachDryWeightLookupForm() {
   const output = document.getElementById('dry-weight-results');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Capture success text so alert is displayed after pending cleanup.
+    let successMessage = '';
     let setCode;
     try {
       // Normalize lookup code to make AB and ab searches behave identically in dry-weight lookup.
@@ -1251,11 +1295,16 @@ function attachBatchVariantForm() {
         const created = await postJson('/api/batch_variants', { set_code: setCode, weight_code: weightCode, items });
         form.reset();
         buildTable(itemsContainer, ['SKU', 'Batch'], [], 'No SKUs loaded.');
-        alert(`Batch variant created: ${created.batch_variant_code || ''}`.trim());
+        // Store success text for post-pending popup timing.
+        successMessage = `Batch variant created: ${created.batch_variant_code || ''}`.trim();
       } catch (error) {
         alert(error.message);
       }
     });
+    // Maintain success feedback while showing it only after overlay cleanup.
+    if (successMessage) {
+      alert(successMessage);
+    }
   });
 }
 
@@ -1815,6 +1864,8 @@ function attachLocationPartnerUtilityForm() {
 
   partnerForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    // Save success popup text for display after withPendingState() teardown.
+    let successMessage = '';
     const formData = new FormData(partnerForm);
     const payload = {
       // Always create a new AB code from the counter, even if partner/machine text matches existing rows.
@@ -1824,13 +1875,18 @@ function attachLocationPartnerUtilityForm() {
     await withPendingState(partnerForm, async () => {
       try {
         const created = await postJson('/api/location_codes/partners', payload);
-        alert(`Partner code ${created.partner_code} created.`);
+        // Store success text and alert after pending overlay cleanup.
+        successMessage = `Partner code ${created.partner_code} created.`;
         partnerForm.reset();
         await loadPartnerTable();
       } catch (error) {
         alert(error.message);
       }
     });
+    // Keep success popup behavior but only after pending state is cleared.
+    if (successMessage) {
+      alert(successMessage);
+    }
   });
 
   loadPartnerTable().catch((error) => alert(error.message));
@@ -1977,6 +2033,8 @@ function attachCompoundingHowPage() {
           return;
         }
 
+        // Capture success feedback so alert appears after pending state cleanup for row edits.
+        let successMessage = '';
         await withPendingState(row, async () => {
           try {
             await fetchJson(`/api/compounding_how/${encodeURIComponent(item.processing_code || '')}`, {
@@ -1993,11 +2051,16 @@ function attachCompoundingHowPage() {
             failureInput.disabled = true;
             machineInput.disabled = true;
             processedInput.disabled = true;
-            alert(`Updated ${item.processing_code || 'record'}.`);
+            // Save success text for post-overlay popup timing.
+            successMessage = `Updated ${item.processing_code || 'record'}.`;
           } catch (error) {
             alert(error.message);
           }
         });
+        // Show success alert after withPendingState() has finished clearing pending visuals.
+        if (successMessage) {
+          alert(successMessage);
+        }
       });
 
       row.append(processingCodeCell, createdCell, ownerCell, failureCell, machineCell, processedCell, actionCell);
@@ -2026,6 +2089,8 @@ function attachCompoundingHowPage() {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
+    // Capture create success popup text so overlay cleanup finishes first.
+    let successMessage = '';
     await withPendingState(form, async () => {
       try {
         const created = await postJson('/api/compounding_how', {
@@ -2041,11 +2106,16 @@ function attachCompoundingHowPage() {
         suffixInput.value = allocated.process_code_suffix || '';
         updatePreview();
         await loadItems();
-        alert(`Compounding how created: ${created.processing_code || ''}`.trim());
+        // Defer popup until pending teardown completes.
+        successMessage = `Compounding how created: ${created.processing_code || ''}`.trim();
       } catch (error) {
         alert(error.message);
       }
     });
+    // Display success popup only once withPendingState() has removed pending UI.
+    if (successMessage) {
+      alert(successMessage);
+    }
   });
 
   loadMeta().then(loadItems).catch((error) => alert(error.message));
@@ -2282,6 +2352,8 @@ function attachPelletBagsPage() {
           payload[input.name] = input.type === 'number' ? numericOrNull(input.value) : (input.value || null);
         });
 
+        // Capture row-update success feedback so it runs after pending UI teardown.
+        let successMessage = '';
         await withPendingState(row, async () => {
           await fetchJson(`/api/pellet_bags/${encodeURIComponent(item.pellet_bag_id || '')}`, {
             method: 'PATCH',
@@ -2291,8 +2363,13 @@ function attachPelletBagsPage() {
           button.dataset.mode = '';
           button.textContent = 'Edit';
           (row._editable || []).forEach((input) => { input.disabled = true; });
-          alert(`Updated ${item.pellet_bag_code || 'pellet bag'}.`);
+          // Save success text for post-pending popup.
+          successMessage = `Updated ${item.pellet_bag_code || 'pellet bag'}.`;
         });
+        // Show success confirmation after pending state cleanup.
+        if (successMessage) {
+          alert(successMessage);
+        }
       });
       actionTd.appendChild(button);
       row.appendChild(actionTd);
@@ -2634,6 +2711,8 @@ function attachConversion1ProductsPage() {
         (row._editable || []).forEach((input) => {
           payload[input.name] = parseCellValue(input);
         });
+        // Capture success text and show alert after pending overlay cleanup for row updates.
+        let successMessage = '';
         await withPendingState(row, async () => {
           await fetchJson(`/api/conversion1_products/${encodeURIComponent(item.product_code || '')}`, {
             method: 'PATCH',
@@ -2643,8 +2722,13 @@ function attachConversion1ProductsPage() {
           button.dataset.mode = '';
           button.textContent = 'Edit';
           (row._editable || []).forEach((input) => { input.disabled = true; });
-          alert(`Updated ${item.product_code || 'product'}.`);
+          // Save success message for post-pending display.
+          successMessage = `Updated ${item.product_code || 'product'}.`;
         });
+        // Keep success alert behavior while ensuring pending UI is already cleared.
+        if (successMessage) {
+          alert(successMessage);
+        }
       });
       actionCell.appendChild(button);
       row.appendChild(actionCell);
