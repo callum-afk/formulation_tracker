@@ -107,6 +107,14 @@ async function withPendingState(scope, action) {
   }
 }
 
+// Mark forms that manage submit lifecycle in JavaScript so global native submit handling can skip them.
+function markAsyncSubmitForm(form) {
+  // Only annotate real form elements because callers may pass null during conditional setup paths.
+  if (!(form instanceof HTMLFormElement)) return;
+  // Use an explicit string value so delegated submit logic can reliably match data-async-submit="true".
+  form.dataset.asyncSubmit = 'true';
+}
+
 async function postJson(url, payload) {
   // Submit JSON payloads and gracefully surface non-JSON server errors.
   const response = await fetch(url, {
@@ -359,6 +367,8 @@ function ensurePageSizeSelector(container, currentSize, onChange) {
 function attachIngredientForm() {
   const form = document.getElementById('ingredient-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   const status = document.getElementById('ingredient-form-status');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -397,6 +407,8 @@ function attachIngredientForm() {
 function attachIngredientMsdsForm() {
   const form = document.getElementById('ingredient-msds-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   const status = document.getElementById('ingredient-msds-status');
   const sku = form.dataset.sku;
   const hasMsds = form.dataset.hasMsds === '1';
@@ -441,6 +453,8 @@ function attachIngredientMsdsForm() {
 function attachIngredientImportForm() {
   const form = document.getElementById('ingredient-import-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
@@ -475,6 +489,8 @@ function attachIngredientImportForm() {
 function attachBatchForm() {
   const form = document.getElementById('batch-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await withPendingState(form, async () => {
@@ -693,6 +709,8 @@ function attachBatchLookupForm() {
 function attachSetForm() {
   const form = document.getElementById('set-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   const addButton = document.getElementById('add-sku-select');
   const selectsContainer = document.getElementById('sku-selects');
   const template = document.getElementById('sku-select-template');
@@ -704,6 +722,8 @@ function attachSetForm() {
   const paginationContainer = document.getElementById('sets-pagination');
   const detailPanel = document.getElementById('set-detail-panel');
   const detailForm = document.getElementById('set-detail-form');
+  // This detail form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(detailForm);
   const detailStatus = document.getElementById('set-detail-status');
   const deleteButton = document.getElementById('set-detail-delete');
   const isAdmin = form.dataset.isAdmin === '1';
@@ -926,6 +946,8 @@ function attachSetForm() {
 function attachDryWeightForm() {
   const form = document.getElementById('dry-weight-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   const loadButton = document.getElementById('load-dry-weight-set');
   const entryContainer = document.getElementById('dry-weight-entry');
   const totalOutput = document.getElementById('dry-weight-total');
@@ -1068,6 +1090,8 @@ function attachDryWeightLookupForm() {
 function attachBatchVariantForm() {
   const form = document.getElementById('batch-variant-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   const loadButton = document.getElementById('load-batch-items');
   const itemsContainer = document.getElementById('batch-variant-items');
 
@@ -1502,6 +1526,8 @@ function formatDateToYyMmDd(dateValue) {
 function attachLocationCodePage() {
   const locationForm = document.getElementById('location-code-form');
   if (!locationForm) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(locationForm);
   const formulationSelect = document.getElementById('location-formulation-select');
   const formulationManual = document.getElementById('location-formulation-manual');
   const partnerSelect = document.getElementById('location-partner-select');
@@ -1711,6 +1737,8 @@ function attachLocationPartnerUtilityForm() {
   // Wire the utilities page partner creation workflow and keep the partner code table in sync.
   const partnerForm = document.getElementById('location-partner-form');
   if (!partnerForm) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(partnerForm);
   const partnerResults = document.getElementById('location-partner-results');
 
   async function loadPartnerTable() {
@@ -1752,6 +1780,8 @@ function attachCompoundingHowPage() {
   // Wire form generation, table rendering, and inline edit interactions for compounding-how records.
   const form = document.getElementById('compounding-how-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
   const locationSelect = document.getElementById('compounding-location-code');
   const suffixInput = document.getElementById('compounding-process-suffix');
   const previewInput = document.getElementById('compounding-processing-preview');
@@ -2000,6 +2030,8 @@ function appendSelectOptions(select, options) {
 function attachPelletBagsPage() {
   const form = document.getElementById('pellet-bag-create-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
 
   const status = document.getElementById('pellet-create-status');
   const createdCodesContainer = document.getElementById('pellet-created-codes');
@@ -2256,6 +2288,8 @@ function attachConversion1ProductsPage() {
   // Bind only on Conversion 1 products route where the create form is present.
   const form = document.getElementById('conversion1-products-create-form');
   if (!form) return;
+  // This form is submitted via fetch + withPendingState(), so native delegated pending handling must ignore it.
+  markAsyncSubmitForm(form);
 
   const errorsBox = document.getElementById('conversion1-products-errors');
   const status = document.getElementById('conversion1-products-create-status');
@@ -2772,6 +2806,8 @@ function attachNativeSubmitPendingState() {
   document.addEventListener('submit', (event) => {
     const form = event.target instanceof HTMLFormElement ? event.target : null;
     if (!form) return;
+    // Skip JS-managed forms that already use withPendingState() and explicitly opt out with data-async-submit="true".
+    if (form.dataset.asyncSubmit === 'true') return;
     // Skip prevented submits because fetch/AJAX handlers already manage pending state via withPendingState().
     if (event.defaultPrevented) return;
     // Exclude GET forms so search/filter flows stay lightweight and non-blocking by default.
