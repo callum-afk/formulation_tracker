@@ -4,8 +4,11 @@ const DEFAULT_PAGE_SIZE = 50;
 // Shared selectable page sizes so users can tune table density consistently across pages.
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
-// Track concurrent submit operations so one reusable overlay can support nested async workflows safely.
-let activeSubmitOperations = 0;
+// Track each in-flight submit operation by token so overlay visibility is derived from explicit active owners.
+const activeSubmitTokens = new Set();
+
+// Keep per-scope pending snapshots in memory so every submit owner can restore control state deterministically.
+const pendingScopeState = new WeakMap();
 
 // Lazily create one shared pending overlay element to keep the visual treatment consistent across all submit flows.
 function ensurePendingOverlay() {
@@ -20,90 +23,107 @@ function ensurePendingOverlay() {
   return overlay;
 }
 
-// Mark each control with a durable original-disabled snapshot so submit cleanup can restore only what this script changed.
-function snapshotControlDisabledState(control) {
-  if (!control.dataset.pendingOriginalDisabled) {
-    control.dataset.pendingOriginalDisabled = control.disabled ? '1' : '0';
-  }
+// Snapshot and disable all mutable controls in a scope so duplicate submissions are prevented while pending.
+function disableScopeControls(scope) {
+  // Build a deterministic snapshot that can be replayed during teardown.
+  const controls = Array.from(scope.querySelectorAll('button, input, select, textarea'));
+  const snapshot = controls.map((control) => ({ control, wasDisabled: control.disabled }));
+  // Disable every captured control immediately for consistent duplicate-submission protection.
+  snapshot.forEach(({ control }) => {
+    control.disabled = true;
+  });
+  return snapshot;
 }
 
-// Disable all submit-capable controls inside the provided scope while an async request is in-flight.
-function setScopePendingState(scope, pending) {
-  if (!scope) return;
-  scope.classList.toggle('is-submit-pending', pending);
-  const controls = scope.querySelectorAll('button, input[type="submit"], input[type="button"], select, textarea, input');
-  controls.forEach((control) => {
-    // Respect explicit read-only fields while still preventing duplicate submit actions on mutable controls.
-    if (pending) {
-      snapshotControlDisabledState(control);
-      control.disabled = true;
-    } else {
-      // Restore controls only when they started enabled so originally-disabled fields remain untouched.
-      if (control.dataset.pendingOriginalDisabled === '0') {
-        control.disabled = false;
-      }
-      // Remove transient flags once pending state is cleared to avoid stale state leaks across repeated submits.
-      delete control.dataset.pendingOriginalDisabled;
-    }
+// Restore controls using the exact snapshot captured at submit start.
+function restoreScopeControls(snapshot) {
+  snapshot.forEach(({ control, wasDisabled }) => {
+    // Skip detached nodes safely while restoring only controls that started enabled.
+    if (!control || !control.isConnected) return;
+    control.disabled = wasDisabled;
   });
 }
 
-// Show global pending UI and disable controls for one scope while counting concurrent operations.
-function showPendingState(scope) {
-  if (!scope || scope.dataset.pendingSubmit === '1') {
-    return false;
+// Apply pending state for one scope and return an idempotent controller that owns its own cleanup.
+function beginPendingScope(scope, ownerType) {
+  // Guard against invalid targets because only element scopes can participate in pending UX.
+  if (!(scope instanceof HTMLElement)) {
+    return null;
   }
+  // Reject duplicate begin calls on the same scope to prevent layered pending state owners.
+  if (pendingScopeState.has(scope)) {
+    return null;
+  }
+  // Create one unique token per submit owner so global overlay state stays deterministic.
+  const token = Symbol(`submit-${ownerType}`);
+  // Capture and disable controls as a single atomic ownership snapshot.
+  const controlSnapshot = disableScopeControls(scope);
+  // Persist ownership metadata so completion can validate token authority.
+  pendingScopeState.set(scope, { token, ownerType, controlSnapshot, done: false });
+  // Reflect pending state on the scope for CSS treatment and debugging.
+  scope.dataset.pendingOwner = ownerType;
+  scope.classList.add('is-submit-pending');
+  // Activate global overlay from token-based source of truth.
   const overlay = ensurePendingOverlay();
-  scope.dataset.pendingSubmit = '1';
-  setScopePendingState(scope, true);
-  activeSubmitOperations += 1;
+  activeSubmitTokens.add(token);
   overlay.hidden = false;
-  return true;
-}
-
-// Clear global pending UI and re-enable controls for one scope, hiding the overlay only when no operations remain.
-function clearPendingState(scope) {
-  if (!scope || scope.dataset.pendingSubmit !== '1') {
-    return;
-  }
-  const overlay = ensurePendingOverlay();
-  scope.dataset.pendingSubmit = '0';
-  setScopePendingState(scope, false);
-  activeSubmitOperations = Math.max(0, activeSubmitOperations - 1);
-  if (activeSubmitOperations === 0) {
-    overlay.hidden = true;
-  }
+  // Expose deterministic completion API used by both JS-managed and native submit lifecycles.
+  return {
+    done() {
+      const state = pendingScopeState.get(scope);
+      // Exit quietly when cleanup already ran or ownership changed.
+      if (!state || state.done || state.token !== token) return;
+      state.done = true;
+      // Restore scope controls and visual flags owned by this token.
+      restoreScopeControls(state.controlSnapshot);
+      scope.classList.remove('is-submit-pending');
+      delete scope.dataset.pendingOwner;
+      pendingScopeState.delete(scope);
+      // Drop token and hide overlay only when no submit owners remain.
+      activeSubmitTokens.delete(token);
+      overlay.hidden = activeSubmitTokens.size === 0;
+    },
+  };
 }
 
 // Reset all pending markers on fresh page initialisation so normal form redirects/reloads never keep stale overlays.
 function resetGlobalPendingState() {
-  activeSubmitOperations = 0;
+  activeSubmitTokens.clear();
   const overlay = document.getElementById('global-submit-overlay');
   if (overlay) {
     overlay.hidden = true;
   }
-  // Clear any lingering submit flags and disabled controls in case browser restoration preserved old DOM state.
-  const pendingScopes = Array.from(document.querySelectorAll('[data-pending-submit="1"], .is-submit-pending'));
+  // Clear lingering pending visuals/disabled controls in case browser restoration preserved prior DOM snapshots.
+  const pendingScopes = Array.from(document.querySelectorAll('.is-submit-pending, [data-pending-owner]'));
   pendingScopes.forEach((scope) => {
-    scope.dataset.pendingSubmit = '0';
-    setScopePendingState(scope, false);
+    // Remove stale visual pending flags for restored pages.
+    scope.classList.remove('is-submit-pending');
+    delete scope.dataset.pendingOwner;
+    // Re-enable controls to avoid stale disabled states on BFCache restore.
+    const controls = scope.querySelectorAll('button, input, select, textarea');
+    controls.forEach((control) => {
+      control.disabled = false;
+    });
+    pendingScopeState.delete(scope);
   });
 }
 
 // Wrap async submit actions in one shared pending-state pattern with overlay, disabled controls, and duplicate protection.
 async function withPendingState(scope, action) {
-  if (!scope) {
+  // Require explicit scope ownership for JS-managed submit flows.
+  if (!(scope instanceof HTMLElement)) {
     return null;
   }
-  const started = showPendingState(scope);
-  if (!started) {
+  const lifecycle = beginPendingScope(scope, 'async');
+  if (!lifecycle) {
+    // Ignore duplicate submit attempts while one lifecycle is already active.
     return null;
   }
   try {
     return await action();
   } finally {
-    // Always clear pending state for fetch/AJAX flows even on thrown errors and early returns.
-    clearPendingState(scope);
+    // Always clear JS-managed pending state even on thrown errors and early returns.
+    lifecycle.done();
   }
 }
 
@@ -224,6 +244,24 @@ async function fetchJson(url, init = undefined) {
     throw new Error(formatApiErrorMessage(data, response.statusText));
   }
   return data.data;
+}
+
+// Parse API responses safely and return normalized payload plus readable error handling for mixed JSON/text endpoints.
+async function readApiPayload(response, fallbackMessage = 'Request failed') {
+  // Read raw body first so malformed JSON responses can still surface useful text.
+  const rawBody = await response.text();
+  let data = {};
+  try {
+    data = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    // Throw readable plain-text errors instead of JSON parse exceptions.
+    throw new Error(rawBody || response.statusText || fallbackMessage);
+  }
+  if (!response.ok || !data.ok) {
+    // Reuse shared error formatter to avoid object-stringification alerts.
+    throw new Error(formatApiErrorMessage(data, response.statusText || fallbackMessage));
+  }
+  return data;
 }
 
 async function fetchSetSkus(setCode) {
@@ -449,10 +487,7 @@ function attachIngredientForm() {
           uploadData.append('file', msdsFile);
           uploadData.append('replace_confirmed', 'true');
           const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
-          const uploadJson = await uploadRes.json();
-          if (!uploadRes.ok || !uploadJson.ok) {
-            throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
-          }
+          await readApiPayload(uploadRes, 'Error uploading MSDS');
         }
         status.textContent = `Saved successfully. SKU: ${sku || ''}`.trim();
         window.location.reload();
@@ -496,10 +531,7 @@ function attachIngredientMsdsForm() {
       try {
         status.textContent = 'Uploading...';
         const response = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
-        const data = await response.json();
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error || data.detail || 'Upload failed');
-        }
+        await readApiPayload(response, 'Upload failed');
         status.textContent = `Upload successful for ${sku}.`;
         window.location.href = '/ingredients';
       } catch (error) {
@@ -536,10 +568,7 @@ function attachIngredientImportForm() {
           uploadData.append('file', msdsFile);
           uploadData.append('replace_confirmed', 'true');
           const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
-          const uploadJson = await uploadRes.json();
-          if (!uploadRes.ok || !uploadJson.ok) {
-            throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
-          }
+          await readApiPayload(uploadRes, 'Error uploading MSDS');
         }
         // Save success state for post-pending UI feedback.
         successMessage = `Imported SKU: ${sku}`;
@@ -600,10 +629,7 @@ function attachBatchForm() {
             `/api/ingredient_batches/${encodeURIComponent(payload.sku)}/${encodeURIComponent(payload.ingredient_batch_code)}/coa`,
             { method: 'POST', body: uploadData }
           );
-          const uploadJson = await uploadRes.json();
-          if (!uploadRes.ok || !uploadJson.ok) {
-            throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading CoA');
-          }
+          await readApiPayload(uploadRes, 'Error uploading CoA');
         }
         form.reset();
         // Store success text and alert once pending cleanup has completed.
@@ -2977,24 +3003,49 @@ function attachSidebarNavigation() {
   window.localStorage.setItem(storageKey, JSON.stringify(nextState));
 }
 
-// Bind default browser form submits (POST/PUT/PATCH/DELETE) to shared pending UI without interrupting native navigation.
+// Decide whether a form should be treated as a native navigation submit lifecycle.
+function isNativePendingCandidate(form) {
+  // Require explicit opt-in so native navigation submit ownership is clearly separated from JS-managed flows.
+  if (form.dataset.nativeSubmit !== 'true') return false;
+  // Skip JS-managed forms that declare explicit async ownership.
+  if (form.dataset.asyncSubmit === 'true') return false;
+  // Exclude GET forms so search/filter actions remain non-blocking by default.
+  const method = (form.getAttribute('method') || 'get').toLowerCase();
+  if (method === 'get') return false;
+  // Skip forms that target new windows/tabs because current page should stay interactive.
+  const target = (form.getAttribute('target') || '').toLowerCase();
+  if (target && target !== '_self') return false;
+  return true;
+}
+
+// Bind explicit native submit pending lifecycles per eligible form instead of global delegated submit interception.
 function attachNativeSubmitPendingState() {
-  // Use one delegated listener so existing and future server-rendered forms all share consistent pending behaviour.
-  document.addEventListener('submit', (event) => {
-    const form = event.target instanceof HTMLFormElement ? event.target : null;
-    if (!form) return;
-    // Skip JS-managed forms that already use withPendingState() and explicitly opt out with data-async-submit="true".
-    if (form.dataset.asyncSubmit === 'true') return;
-    // Skip prevented submits because fetch/AJAX handlers already manage pending state via withPendingState().
-    if (event.defaultPrevented) return;
-    // Exclude GET forms so search/filter flows stay lightweight and non-blocking by default.
-    const method = (form.getAttribute('method') || 'get').toLowerCase();
-    if (method === 'get') return;
-    // Skip forms that intentionally post to a new tab/window since overlay should not lock the current page.
-    const target = (form.getAttribute('target') || '').toLowerCase();
-    if (target && target !== '_self') return;
-    // Apply global pending UI for native submits; cleanup occurs on next page initialisation.
-    showPendingState(form);
+  // Attach one scoped listener to each form rendered on this page.
+  const forms = Array.from(document.querySelectorAll('form'));
+  forms.forEach((form) => {
+    if (!(form instanceof HTMLFormElement)) return;
+    // Skip forms outside the native lifecycle scope.
+    if (!isNativePendingCandidate(form)) return;
+    // Prevent duplicate binding if bootstrap is run more than once.
+    if (form.dataset.nativePendingBound === '1') return;
+    form.dataset.nativePendingBound = '1';
+    form.addEventListener('submit', (event) => {
+      // Respect explicit cancellations from validation or custom submit handlers.
+      if (event.defaultPrevented) return;
+      // Avoid starting more than one native pending lifecycle for repeated submit attempts.
+      if (form.dataset.nativePendingActive === '1') {
+        event.preventDefault();
+        return;
+      }
+      // Start the native pending lifecycle and leave teardown to the next page load/reset handlers.
+      const lifecycle = beginPendingScope(form, 'native');
+      if (!lifecycle) {
+        event.preventDefault();
+        return;
+      }
+      // Persist native active flag so rapid double-clicks are blocked deterministically.
+      form.dataset.nativePendingActive = '1';
+    });
   });
 }
 

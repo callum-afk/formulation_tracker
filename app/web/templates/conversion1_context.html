@@ -13,7 +13,8 @@
   </div>
   {% endif %}
   <!-- Form creates a Conversion ID from pellet code, partner mapping, and production date. -->
-  <form method="post" class="form-stack">
+  <!-- Native form submit posts to server-rendered endpoint, so mark it for native pending lifecycle ownership. -->
+  <form method="post" class="form-stack" data-native-submit="true">
     <!-- Grid row contains primary code input fields in three responsive columns. -->
     <div class="grid">
       <!-- Dropdown lets users select an existing pellet code from persisted options. -->
