@@ -20,6 +20,7 @@ from app.api.pellet_bags_api import router as pellet_bags_router
 from app.api.pellet_bag_status_api import router as pellet_bag_status_router
 from app.api.conversion1_products_api import router as conversion1_products_router
 from app.web.routes import router as web_router
+from app.services.permission_service import ResolvedUserAccess, build_sidebar_groups, resolve_permissions_for_role
 
 LOGGER = logging.getLogger(__name__)
 
@@ -56,10 +57,35 @@ async def auth_middleware(request: Request, call_next):
         # Store actor and email on request state for template rendering and audit logging consistency.
         request.state.actor = auth_context.email
         request.state.user_email = auth_context.email
+        # Load the persisted user-role row so every downstream page and API can enforce the same permissions.
+        role_record = request.app.state.bigquery.get_user_role(auth_context.email)
+        # Detect bootstrap mode so the first signed-in user can access the admin page and seed roles.
+        is_bootstrap_admin = role_record is None and request.app.state.bigquery.count_active_user_roles() == 0
+        # Promote only the bootstrap user to admin; otherwise preserve the explicit persisted role-group.
+        role_group = "admin" if is_bootstrap_admin else (role_record or {}).get("role_group", "")
+        # Resolve the role-group into the concrete named permission list used by route guards and filtering.
+        permissions = frozenset(resolve_permissions_for_role(role_group))
+        request.state.user_access = ResolvedUserAccess(
+            role_record=role_record,
+            role_group=role_group or "unassigned",
+            permissions=permissions,
+            is_admin=role_group == "admin",
+            is_bootstrap_admin=is_bootstrap_admin,
+        )
+        # Precompute the sidebar model once so templates can render only the destinations this user may access.
+        request.state.sidebar_groups = build_sidebar_groups(permissions, role_group == "admin")
     except ValueError as exc:
         # Ensure templates that render user boxes never crash when auth parsing fails.
         request.state.actor = None
         request.state.user_email = None
+        request.state.user_access = ResolvedUserAccess(
+            role_record=None,
+            role_group="unassigned",
+            permissions=frozenset(),
+            is_admin=False,
+            is_bootstrap_admin=False,
+        )
+        request.state.sidebar_groups = []
         return JSONResponse(status_code=401, content={"ok": False, "error": str(exc)})
 
     return await call_next(request)

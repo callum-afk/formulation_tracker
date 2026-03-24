@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_actor, get_bigquery, get_settings
@@ -8,6 +8,7 @@ from app.models import ApiResponse, IngredientSetCreate, IngredientSetUpdate
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import int_to_code
 from app.services.hashing_service import hash_set
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/sets", tags=["sets"])
 
@@ -15,10 +16,13 @@ router = APIRouter(prefix="/api/sets", tags=["sets"])
 @router.post("", response_model=ApiResponse)
 def create_set(
     payload: IngredientSetCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Enforce set edit access before any formulation-set write occurs.
+    require_permission(request, "sets.edit")
     # Validate every supplied SKU before creating the deduplicated set hash.
     missing_skus = [sku for sku in payload.skus if not bigquery.get_ingredient(sku)]
     if missing_skus:
@@ -66,18 +70,23 @@ def create_set(
 
 @router.get("", response_model=ApiResponse)
 def list_sets(
+    request: Request,
     q: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
+    # Enforce set listing access server-side for the API that powers the page.
+    require_permission(request, "sets.view")
     # Return paged set data so the table scales cleanly to 100+ rows.
     rows, total = bigquery.list_sets_paginated(search=q.strip() if q else None, page=page, page_size=page_size)
     return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
 
 
 @router.get("/{set_code}", response_model=ApiResponse)
-def get_set(set_code: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def get_set(set_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+    # Enforce set detail access server-side for direct API requests.
+    require_permission(request, "sets.view")
     row = bigquery.get_set(set_code)
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
@@ -88,9 +97,12 @@ def get_set(set_code: str, bigquery: BigQueryService = Depends(get_bigquery)) ->
 def update_set(
     set_code: str,
     payload: IngredientSetUpdate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
+    # Enforce set edit access before metadata updates are written.
+    require_permission(request, "sets.edit")
     # Require an existing formulation set before applying metadata updates from the detail editor.
     row = bigquery.get_set(set_code)
     if not row:

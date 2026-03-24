@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from google.api_core.exceptions import NotFound
 
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
@@ -10,6 +10,7 @@ from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, LocationCodeCreate, LocationPartnerCreate
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import int_to_code
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/location_codes", tags=["location_codes"])
 
@@ -49,8 +50,9 @@ DEFAULT_LOCATION_PARTNERS = [
 
 
 @router.get("/partners", response_model=ApiResponse)
-def list_location_partners(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_location_partners(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Merge requested default mappings with user-created partner rows while preserving unique partner codes.
+    require_permission(request, "location_codes.view")
     try:
         custom = bigquery.list_location_partners()
     except NotFound:
@@ -66,10 +68,12 @@ def list_location_partners(bigquery: BigQueryService = Depends(get_bigquery)) ->
 @router.post("/partners", response_model=ApiResponse)
 def create_location_partner(
     payload: LocationPartnerCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor)
 ) -> ApiResponse:
     # Allocate the next two-letter code after seed values so custom partners continue from code BF onwards.
+    require_permission(request, "location_codes.edit")
     partner_code = None
     for _ in range(20):
         # Always reserve a fresh code, even when partner or machine text matches an existing row.
@@ -92,20 +96,23 @@ def create_location_partner(
 
 
 @router.get("/formulations", response_model=ApiResponse)
-def list_location_formulations(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_location_formulations(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Supply selectable formulation combinations for location-code creation UX.
+    require_permission(request, "location_codes.view")
     items = bigquery.list_distinct_formulation_codes()
     return ApiResponse(ok=True, data={"items": items})
 
 
 @router.get("", response_model=ApiResponse)
 def list_location_codes(
+    request: Request,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     q: str | None = Query(default=None),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     # Return paginated location IDs with optional substring filtering on the full location code string.
+    require_permission(request, "location_codes.view")
     rows, total = bigquery.list_location_codes_paginated(page=page, page_size=page_size, q=(q or "").strip() or None)
 
     # Merge partner labels for human-readable table rendering without losing canonical stored partner codes.
@@ -131,10 +138,12 @@ def list_location_codes(
 @router.post("", response_model=ApiResponse)
 def create_location_code(
     payload: LocationCodeCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Validate partner code against the merged default+custom partner registry before issuing a location ID.
+    require_permission(request, "location_codes.edit")
     partner_codes = {partner["partner_code"] for partner in DEFAULT_LOCATION_PARTNERS}
     try:
         partner_codes.update(partner["partner_code"] for partner in bigquery.list_location_partners())

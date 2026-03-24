@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Provide one straightforward admin form for creating new users or updating existing role assignments. -->
+  <h2>Add or update user</h2>
+  <form method="post" action="/admin/user-roles" class="form-stack">
+    <!-- Capture the authenticated identity key used by permission resolution. -->
+    <label>Email <input type="email" name="email" required /></label>
+    <!-- Capture first name separately so admins can maintain readable user records. -->
+    <label>First name <input type="text" name="first_name" /></label>
+    <!-- Capture last name separately so admins can maintain readable user records. -->
+    <label>Last name <input type="text" name="last_name" /></label>
+    <!-- Persist one of the supported named role-group profiles. -->
+    <label>Permission group
+      <select name="role_group" required>
+        {% for option in role_options %}
+        <option value="{{ option }}">{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <!-- Keep activation explicit so admins can create enabled records by default. -->
+    <label>Active
+      <select name="is_active">
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    </label>
+    <button type="submit">Save user role</button>
+  </form>
+</section>
+
+<section class="panel">
+  <!-- Show the current role table so admins can review resolved permissions and edit users inline. -->
+  <h2>Existing users</h2>
+  <div class="table-shell">
+    <table>
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>First name</th>
+          <th>Last name</th>
+          <th>Role group</th>
+          <th>Permissions</th>
+          <th>Active</th>
+          <th>Update</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.email }}</td>
+          <td>{{ row.first_name or "" }}</td>
+          <td>{{ row.last_name or "" }}</td>
+          <td>{{ row.role_group }}</td>
+          <td>{{ (row.permissions or []) | join(', ') }}</td>
+          <td>{{ 'Yes' if row.is_active else 'No' }}</td>
+          <td>
+            <!-- Use a compact inline form so edits stay reliable without client-side scripting. -->
+            <form method="post" action="/admin/user-roles" class="inline-actions">
+              <input type="hidden" name="email" value="{{ row.email }}" />
+              <input type="hidden" name="first_name" value="{{ row.first_name or '' }}" />
+              <input type="hidden" name="last_name" value="{{ row.last_name or '' }}" />
+              <select name="role_group">
+                {% for option in role_options %}
+                <option value="{{ option }}" {% if option == row.role_group %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+              <select name="is_active">
+                <option value="true" {% if row.is_active %}selected{% endif %}>Active</option>
+                <option value="false" {% if not row.is_active %}selected{% endif %}>Inactive</option>
+              </select>
+              <button type="submit">Update</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">No user roles configured yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

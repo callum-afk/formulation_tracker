@@ -7,46 +7,6 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <!-- Sidebar configuration lives in one place so every page uses one shared nav structure. -->
-  {% set sidebar_groups = [
-    {
-      "id": "dashboard",
-      "label": "General",
-      "default_open": true,
-      "items": [
-        {"label": "Dashboard", "href": "/"}
-      ]
-    },
-    {
-      "id": "ingredients",
-      "label": "Ingredients",
-      "default_open": true,
-      "items": [
-        {"label": "Ingredient SKUs", "href": "/ingredients"},
-        {"label": "Ingredient Batches", "href": "/batches"}
-      ]
-    },
-    {
-      "id": "formulation",
-      "label": "Formulation",
-      "default_open": true,
-      "items": [
-        {"label": "Formulation Sets", "href": "/sets"},
-        {"label": "Dry Weights", "href": "/dry_weights"},
-        {"label": "Batch Selection", "href": "/batch_selection"}
-      ]
-    },
-    {# Mixing and Conversion 1 navigation are temporarily hidden while the staged launch focuses on active workflows. #}
-    {
-      "id": "system",
-      "label": "System",
-      "default_open": true,
-      "items": [
-        {"label": "Utilities", "href": "/utilities"}
-      ]
-    }
-  ] %}
-
   <!-- Page shell keeps navigation on the left and main content on the right. -->
   <div class="app-shell">
     <!-- Sidebar uses the same visual language as content cards and inputs. -->
@@ -60,7 +20,7 @@
 
       <!-- Sidebar groups are rendered from config so behaviour and styling stay consistent. -->
       <nav class="sidebar-groups" aria-label="Main sections">
-        {% for group in sidebar_groups %}
+        {% for group in request.state.sidebar_groups %}
         <!-- Each group has a stable id used for localStorage persistence. -->
         <details class="nav-group" data-nav-group data-group-id="{{ group.id }}" {% if group.default_open %}open{% endif %}>
           <!-- Group summary row is the clickable accordion trigger. -->
@@ -91,6 +51,7 @@
         <div>
           <strong>{{ request.state.user_email if request.state.user_email else "Unknown user" }}</strong>
           <small>Signed in user</small>
+          <small>Role: {{ request.state.user_access.role_group }}</small>
         </div>
       </div>
     </aside>

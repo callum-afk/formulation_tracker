@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from typing import Dict
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_bigquery
 from app.models import ApiResponse
 from app.services.bigquery_service import BigQueryService
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/formulations", tags=["formulations"])
 
 
 @router.get("", response_model=ApiResponse)
 def list_formulations(
+    request: Request,
     set_code: str | None = None,
     weight_code: str | None = None,
     batch_variant_code: str | None = None,
@@ -22,6 +24,8 @@ def list_formulations(
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
+    # Restrict the shared formulations API to Group 2 users and admins because it exposes dry-weight percentages.
+    require_permission(request, "dry_weights.view")
     # Build optional filters from query params so users can browse all or narrow by one/more fields.
     filters: Dict[str, str] = {}
     if set_code:

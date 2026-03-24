@@ -14,6 +14,7 @@ from google.cloud import bigquery
 from app.constants import FAILURE_MODES
 from app.services.codegen_service import int_to_code
 from app.services.codegen_service import code_to_int
+from app.services.permission_service import resolve_permissions_for_role
 
 
 LOGGER = logging.getLogger(__name__)
@@ -127,6 +128,7 @@ class BigQueryService:
             "conversion1_products": {"product_code", "conversion1_how_code", "product_suffix", "storage_location", "notes", "number_units_produced", "numbered_in_order", "tensile_rigid_status", "tensile_films_status", "seal_strength_status", "shelf_stability_status", "solubility_status", "defect_analysis_status", "blocking_status", "film_emc_status", "friction_status", "width_mm", "length_m", "avg_film_thickness_um", "sd_film_thickness", "film_thickness_variation_percent", "created_at", "created_by", "updated_at", "updated_by", "is_active"},
             "conversion1_product_counter": {"id", "next_suffix", "updated_at"},
             "ingredient_sets": {"set_code", "set_hash", "created_at", "created_by", "notes", "material_workstream"},
+            "user_roles": {"email", "first_name", "last_name", "role_group", "permissions", "is_active", "created_at", "created_by", "updated_at", "updated_by"},
         }
 
         # Query INFORMATION_SCHEMA once and build a lookup map for compact validation logic.
@@ -208,6 +210,77 @@ class BigQueryService:
             if update_job.num_dml_affected_rows == 1:
                 return current_value
         raise RuntimeError("Failed to allocate counter after retries")
+
+    def list_user_roles(self) -> List[Dict[str, Any]]:
+        # Return active and inactive user-role rows for the admin table ordered predictably by email.
+        query = (
+            f"SELECT email, first_name, last_name, role_group, permissions, is_active, created_at, created_by, updated_at, updated_by "
+            f"FROM `{self.dataset}.user_roles` ORDER BY email"
+        )
+        rows = self._run(query, []).result()
+        return [dict(row) for row in rows]
+
+    def count_active_user_roles(self) -> int:
+        # Count active user-role rows so the first authenticated user can bootstrap admin access safely.
+        query = f"SELECT COUNT(1) AS total FROM `{self.dataset}.user_roles` WHERE is_active = TRUE"
+        rows = list(self._run(query, []).result())
+        return int(rows[0]["total"]) if rows else 0
+
+    def get_user_role(self, email: str) -> Optional[Dict[str, Any]]:
+        # Fetch the one active user-role row keyed by the Google-authenticated email address.
+        query = (
+            f"SELECT email, first_name, last_name, role_group, permissions, is_active, created_at, created_by, updated_at, updated_by "
+            f"FROM `{self.dataset}.user_roles` WHERE LOWER(email) = LOWER(@email) AND is_active = TRUE LIMIT 1"
+        )
+        rows = self._run(query, [bigquery.ScalarQueryParameter("email", "STRING", email)]).result()
+        for row in rows:
+            return dict(row)
+        return None
+
+    def create_or_update_user_role(
+        self,
+        email: str,
+        first_name: Optional[str],
+        last_name: Optional[str],
+        role_group: str,
+        is_active: bool,
+        actor_email: Optional[str],
+    ) -> None:
+        # Resolve and persist the explicit permission list alongside the named role profile for audit clarity.
+        permissions = sorted(resolve_permissions_for_role(role_group))
+        # Upsert the user-role row atomically with a BigQuery MERGE so admin edits remain idempotent.
+        query = (
+            f"MERGE `{self.dataset}.user_roles` AS target "
+            "USING ("
+            "  SELECT @email AS email, @first_name AS first_name, @last_name AS last_name, @role_group AS role_group, "
+            "         @permissions AS permissions, @is_active AS is_active, @actor_email AS actor_email"
+            ") AS source "
+            "ON LOWER(target.email) = LOWER(source.email) "
+            "WHEN MATCHED THEN UPDATE SET "
+            "  first_name = source.first_name, "
+            "  last_name = source.last_name, "
+            "  role_group = source.role_group, "
+            "  permissions = source.permissions, "
+            "  is_active = source.is_active, "
+            "  updated_at = CURRENT_TIMESTAMP(), "
+            "  updated_by = source.actor_email "
+            "WHEN NOT MATCHED THEN INSERT "
+            "  (email, first_name, last_name, role_group, permissions, is_active, created_at, created_by, updated_at, updated_by) "
+            "VALUES "
+            "  (source.email, source.first_name, source.last_name, source.role_group, source.permissions, source.is_active, CURRENT_TIMESTAMP(), source.actor_email, CURRENT_TIMESTAMP(), source.actor_email)"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("email", "STRING", email),
+                bigquery.ScalarQueryParameter("first_name", "STRING", first_name),
+                bigquery.ScalarQueryParameter("last_name", "STRING", last_name),
+                bigquery.ScalarQueryParameter("role_group", "STRING", role_group),
+                bigquery.ArrayQueryParameter("permissions", "STRING", permissions),
+                bigquery.ScalarQueryParameter("is_active", "BOOL", is_active),
+                bigquery.ScalarQueryParameter("actor_email", "STRING", actor_email),
+            ],
+        ).result()
 
     def insert_ingredient(self, ingredient: Dict[str, Any]) -> None:
         query = (
@@ -840,6 +913,15 @@ class BigQueryService:
         # Preserve pre-pagination method for backward compatibility.
         rows, _ = self.list_formulations_paginated(filters=filters, page=1, page_size=1000)
         return rows
+
+    def strip_dry_weight_data(self, formulations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        # Remove dry-weight payloads entirely so restricted users never receive percentages from the backend.
+        sanitized_rows: List[Dict[str, Any]] = []
+        for row in formulations:
+            sanitized_row = dict(row)
+            sanitized_row.pop("dry_weight_items", None)
+            sanitized_rows.append(sanitized_row)
+        return sanitized_rows
 
     def list_formulations_by_batch(self, sku: str, batch_code: str) -> List[Dict[str, Any]]:
         # Find every formulation where the nested batch items include the requested SKU + batch code pair.
@@ -1647,6 +1729,13 @@ class BigQueryService:
         ]
         return {"ingredient": ingredient, "formulations": formulations, "pellet_bags": pellet_bags}
 
+    def get_sku_summary_filtered(self, sku: str, include_formulations: bool) -> Dict[str, List[Dict[str, Any]] | Optional[Dict[str, Any]]]:
+        # Reuse the full summary query and then remove restricted formulation sections when the caller lacks access.
+        summary = self.get_sku_summary(sku)
+        if not include_formulations:
+            summary["formulations"] = []
+        return summary
+
     def get_pellet_bag_detail(self, pellet_bag_code: str) -> Optional[Dict[str, Any]]:
         # Load one pellet bag row and enrich it with compounding + location partner context for the detail page.
         pellet_query = (
@@ -1695,6 +1784,13 @@ class BigQueryService:
         )
         params = [bigquery.ScalarQueryParameter("pellet_bag_code", "STRING", pellet_bag_code)]
         return [dict(row) for row in self._run(query, params).result()]
+
+    def get_pellet_bag_detail_filtered(self, pellet_bag_code: str, include_dry_weights: bool) -> Optional[Dict[str, Any]]:
+        # Reuse the full pellet-bag detail query and then strip restricted formulation payloads when required.
+        detail = self.get_pellet_bag_detail(pellet_bag_code)
+        if detail and not include_dry_weights:
+            detail["formulations"] = self.strip_dry_weight_data(detail.get("formulations") or [])
+        return detail
 
     def list_pellet_bags_with_meaningful_status(self, status_column: str, limit: int = 25) -> List[Dict[str, Any]]:
         # Restrict status filters to known columns to avoid unsafe dynamic SQL.
