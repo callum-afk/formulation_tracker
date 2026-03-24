@@ -4,6 +4,60 @@ const DEFAULT_PAGE_SIZE = 50;
 // Shared selectable page sizes so users can tune table density consistently across pages.
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
+// Track concurrent submit operations so one reusable overlay can support nested async workflows safely.
+let activeSubmitOperations = 0;
+
+// Lazily create one shared pending overlay element to keep the visual treatment consistent across all submit flows.
+function ensurePendingOverlay() {
+  let overlay = document.getElementById('global-submit-overlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'global-submit-overlay';
+  overlay.className = 'submit-overlay';
+  overlay.hidden = true;
+  overlay.innerHTML = '<div class="submit-overlay-card"><strong>Processing…</strong><span>Please wait while your request is submitted.</span></div>';
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+// Disable all submit-capable controls inside the provided scope while an async request is in-flight.
+function setScopePendingState(scope, pending) {
+  if (!scope) return;
+  scope.classList.toggle('is-submit-pending', pending);
+  const controls = scope.querySelectorAll('button, input[type="submit"], input[type="button"], select, textarea, input');
+  controls.forEach((control) => {
+    // Respect explicit read-only fields while still preventing duplicate submit actions on mutable controls.
+    if (pending) {
+      control.dataset.pendingWasDisabled = control.disabled ? '1' : '0';
+      control.disabled = true;
+    } else if (control.dataset.pendingWasDisabled === '0') {
+      control.disabled = false;
+    }
+  });
+}
+
+// Wrap async submit actions in one shared pending-state pattern with overlay, disabled controls, and duplicate protection.
+async function withPendingState(scope, action) {
+  if (!scope || scope.dataset.pendingSubmit === '1') {
+    return null;
+  }
+  const overlay = ensurePendingOverlay();
+  scope.dataset.pendingSubmit = '1';
+  setScopePendingState(scope, true);
+  activeSubmitOperations += 1;
+  overlay.hidden = false;
+  try {
+    return await action();
+  } finally {
+    scope.dataset.pendingSubmit = '0';
+    setScopePendingState(scope, false);
+    activeSubmitOperations = Math.max(0, activeSubmitOperations - 1);
+    if (activeSubmitOperations === 0) {
+      overlay.hidden = true;
+    }
+  }
+}
+
 async function postJson(url, payload) {
   // Submit JSON payloads and gracefully surface non-JSON server errors.
   const response = await fetch(url, {
@@ -144,7 +198,11 @@ function normalizeSetRow(item) {
     ? normalizedItem.sku_list.filter(Boolean)
     : parseList((normalizedItem.sku_list || '').toString());
   // Detect legacy malformed rows where the material-workstream column was populated with comma-separated SKU codes.
-  const materialLooksLikeSkuList = !skuList.length && parseList((normalizedItem.material_workstream || '').toString()).every((value) => /\d_\d{4}_\d{2}/.test(value) || /^[A-Z0-9_]+$/.test(value));
+  const materialTokens = parseList((normalizedItem.material_workstream || '').toString());
+  // Only treat material-workstream text as misplaced SKU data when there are multiple clear SKU-like tokens.
+  const materialLooksLikeSkuList = !skuList.length
+    && materialTokens.length > 1
+    && materialTokens.every((value) => /\d_\d{4}_\d{2}/.test(value));
   if (materialLooksLikeSkuList) {
     // Move the misplaced SKU text into sku_list so the table columns render the expected data under the right heading.
     normalizedItem.sku_list = parseList((normalizedItem.material_workstream || '').toString());
@@ -255,33 +313,35 @@ function attachIngredientForm() {
   const status = document.getElementById('ingredient-form-status');
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const formData = new FormData(form);
-    const msdsFile = formData.get('msds_file');
-    formData.delete('msds_file');
-    const payload = Object.fromEntries(formData.entries());
-    payload.category_code = Number(payload.category_code);
-    payload.pack_size_value = Number(payload.pack_size_value);
-    try {
-      status.textContent = 'Creating SKU...';
-      const created = await postJson('/api/ingredients', payload);
-      const sku = created?.sku || created?.ingredient?.sku;
-      if (msdsFile && msdsFile.size > 0 && sku) {
-        status.textContent = 'Uploading MSDS...';
-        const uploadData = new FormData();
-        uploadData.append('file', msdsFile);
-        uploadData.append('replace_confirmed', 'true');
-        const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
-        const uploadJson = await uploadRes.json();
-        if (!uploadRes.ok || !uploadJson.ok) {
-          throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
+    await withPendingState(form, async () => {
+      const formData = new FormData(form);
+      const msdsFile = formData.get('msds_file');
+      formData.delete('msds_file');
+      const payload = Object.fromEntries(formData.entries());
+      payload.category_code = Number(payload.category_code);
+      payload.pack_size_value = Number(payload.pack_size_value);
+      try {
+        status.textContent = 'Creating SKU...';
+        const created = await postJson('/api/ingredients', payload);
+        const sku = created?.sku || created?.ingredient?.sku;
+        if (msdsFile && msdsFile.size > 0 && sku) {
+          status.textContent = 'Uploading MSDS...';
+          const uploadData = new FormData();
+          uploadData.append('file', msdsFile);
+          uploadData.append('replace_confirmed', 'true');
+          const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
+          const uploadJson = await uploadRes.json();
+          if (!uploadRes.ok || !uploadJson.ok) {
+            throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
+          }
         }
+        status.textContent = `Saved successfully. SKU: ${sku || ''}`.trim();
+        window.location.reload();
+      } catch (error) {
+        status.textContent = '';
+        alert(error.message);
       }
-      status.textContent = 'Saved successfully.';
-      window.location.reload();
-    } catch (error) {
-      status.textContent = '';
-      alert(error.message);
-    }
+    });
   });
 }
 
@@ -311,19 +371,21 @@ function attachIngredientMsdsForm() {
     uploadData.append('file', file);
     uploadData.append('replace_confirmed', replaceChecked ? 'true' : 'false');
 
-    try {
-      status.textContent = 'Uploading...';
-      const response = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || data.detail || 'Upload failed');
+    await withPendingState(form, async () => {
+      try {
+        status.textContent = 'Uploading...';
+        const response = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error || data.detail || 'Upload failed');
+        }
+        status.textContent = `Upload successful for ${sku}.`;
+        window.location.href = '/ingredients';
+      } catch (error) {
+        status.textContent = '';
+        alert(error.message);
       }
-      status.textContent = 'Upload successful.';
-      window.location.href = '/ingredients';
-    } catch (error) {
-      status.textContent = '';
-      alert(error.message);
-    }
+    });
   });
 }
 
@@ -338,23 +400,26 @@ function attachIngredientImportForm() {
     const payload = Object.fromEntries(formData.entries());
     payload.category_code = Number(payload.category_code);
     payload.pack_size_value = Number(payload.pack_size_value);
-    try {
-      const created = await postJson('/api/ingredients/import', payload);
-      const sku = created?.sku || payload.sku;
-      if (msdsFile && msdsFile.size > 0 && sku) {
-        const uploadData = new FormData();
-        uploadData.append('file', msdsFile);
-        uploadData.append('replace_confirmed', 'true');
-        const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
-        const uploadJson = await uploadRes.json();
-        if (!uploadRes.ok || !uploadJson.ok) {
-          throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
+    await withPendingState(form, async () => {
+      try {
+        const created = await postJson('/api/ingredients/import', payload);
+        const sku = created?.sku || payload.sku;
+        if (msdsFile && msdsFile.size > 0 && sku) {
+          const uploadData = new FormData();
+          uploadData.append('file', msdsFile);
+          uploadData.append('replace_confirmed', 'true');
+          const uploadRes = await fetch(`/api/ingredients/${encodeURIComponent(sku)}/msds`, { method: 'POST', body: uploadData });
+          const uploadJson = await uploadRes.json();
+          if (!uploadRes.ok || !uploadJson.ok) {
+            throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading MSDS');
+          }
         }
+        alert(`Imported SKU: ${sku}`);
+        window.location.href = '/ingredients';
+      } catch (error) {
+        alert(error.message);
       }
-      window.location.href = '/ingredients';
-    } catch (error) {
-      alert(error.message);
-    }
+    });
   });
 }
 
@@ -363,38 +428,40 @@ function attachBatchForm() {
   if (!form) return;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const formData = new FormData(form);
-    const coaFile = formData.get('coa_file');
-    formData.delete('coa_file');
-    const payload = Object.fromEntries(formData.entries());
-    if (payload.quantity_value === '') {
-      delete payload.quantity_value;
-    } else if (payload.quantity_value !== undefined) {
-      payload.quantity_value = Number(payload.quantity_value);
-    }
-    if (payload.quantity_unit === '') {
-      delete payload.quantity_unit;
-    }
-    try {
-      await postJson('/api/ingredient_batches', payload);
-      if (coaFile && coaFile.size > 0) {
-        const uploadData = new FormData();
-        uploadData.append('file', coaFile);
-        uploadData.append('replace_confirmed', 'true');
-        const uploadRes = await fetch(
-          `/api/ingredient_batches/${encodeURIComponent(payload.sku)}/${encodeURIComponent(payload.ingredient_batch_code)}/coa`,
-          { method: 'POST', body: uploadData }
-        );
-        const uploadJson = await uploadRes.json();
-        if (!uploadRes.ok || !uploadJson.ok) {
-          throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading CoA');
-        }
+    await withPendingState(form, async () => {
+      const formData = new FormData(form);
+      const coaFile = formData.get('coa_file');
+      formData.delete('coa_file');
+      const payload = Object.fromEntries(formData.entries());
+      if (payload.quantity_value === '') {
+        delete payload.quantity_value;
+      } else if (payload.quantity_value !== undefined) {
+        payload.quantity_value = Number(payload.quantity_value);
       }
-      form.reset();
-      alert('Batch created');
-    } catch (error) {
-      alert(error.message);
-    }
+      if (payload.quantity_unit === '') {
+        delete payload.quantity_unit;
+      }
+      try {
+        await postJson('/api/ingredient_batches', payload);
+        if (coaFile && coaFile.size > 0) {
+          const uploadData = new FormData();
+          uploadData.append('file', coaFile);
+          uploadData.append('replace_confirmed', 'true');
+          const uploadRes = await fetch(
+            `/api/ingredient_batches/${encodeURIComponent(payload.sku)}/${encodeURIComponent(payload.ingredient_batch_code)}/coa`,
+            { method: 'POST', body: uploadData }
+          );
+          const uploadJson = await uploadRes.json();
+          if (!uploadRes.ok || !uploadJson.ok) {
+            throw new Error(uploadJson.error || uploadJson.detail || 'Error uploading CoA');
+          }
+        }
+        form.reset();
+        alert(`Batch created: ${payload.ingredient_batch_code}`);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 }
 
@@ -408,6 +475,7 @@ function attachBatchLookupForm() {
   const nextButton = document.getElementById('batches-next-page');
   const pageLabel = document.getElementById('batches-page-label');
   const paginationContainer = document.getElementById('batches-pagination');
+  const isAdmin = form.dataset.isAdmin === '1';
   let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
@@ -424,6 +492,8 @@ function attachBatchLookupForm() {
     if (batchCode) {
       params.set('batch_code', batchCode);
     }
+    // Keep ingredient-batches lookup as a full listing view so users can review both live and archived rows.
+    params.set('include_archived', 'true');
     params.set('page', String(targetPage));
     params.set('page_size', String(pageSize));
 
@@ -441,7 +511,7 @@ function attachBatchLookupForm() {
     if (items.length === 0) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 7;
+      cell.colSpan = isAdmin ? 9 : 8;
       cell.textContent = 'No batches found.';
       row.appendChild(cell);
       output.appendChild(row);
@@ -482,13 +552,40 @@ function attachBatchLookupForm() {
         } else {
           coaCell.textContent = 'None';
         }
+        const statusCell = document.createElement('td');
+        const archived = Boolean(item.archived);
+        statusCell.textContent = archived ? 'Archived' : 'Live';
+        statusCell.className = archived ? 'status-archived' : 'status-live';
+        const actionsCell = document.createElement('td');
+        if (isAdmin) {
+          const archiveButton = document.createElement('button');
+          archiveButton.type = 'button';
+          archiveButton.textContent = archived ? 'Unarchive' : 'Archive';
+          archiveButton.addEventListener('click', async () => {
+            await withPendingState(form, async () => {
+              try {
+                await fetchJson(`/api/ingredient_batches/${encodeURIComponent(item.sku)}/${encodeURIComponent(item.ingredient_batch_code)}/archive`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ archived: !archived }),
+                });
+                await loadBatches(page);
+              } catch (error) {
+                alert(error.message);
+              }
+            });
+          });
+          actionsCell.appendChild(archiveButton);
+        }
         row.appendChild(skuCell);
         row.appendChild(codeCell);
         row.appendChild(receivedCell);
         row.appendChild(notesCell);
         row.appendChild(quantityCell);
         row.appendChild(ownerCell);
+        row.appendChild(statusCell);
         row.appendChild(coaCell);
+        if (isAdmin) row.appendChild(actionsCell);
         output.appendChild(row);
       });
     }
@@ -559,6 +656,8 @@ function attachSetForm() {
   const detailPanel = document.getElementById('set-detail-panel');
   const detailForm = document.getElementById('set-detail-form');
   const detailStatus = document.getElementById('set-detail-status');
+  const deleteButton = document.getElementById('set-detail-delete');
+  const isAdmin = form.dataset.isAdmin === '1';
   let pageSize = DEFAULT_PAGE_SIZE;
   let page = 1;
   let lastTotal = 0;
@@ -595,18 +694,21 @@ function attachSetForm() {
       alert('Select at least one SKU.');
       return;
     }
-    try {
-      // Include optional metadata fields when creating formulation sets from the entry form.
-      await postJson('/api/sets', {
-        skus,
-        material_workstream: (new FormData(form).get('material_workstream') || '').toString().trim(),
-        notes: (new FormData(form).get('notes') || '').toString().trim(),
-      });
-      form.reset();
-      await loadSets(1);
-    } catch (error) {
-      alert(error.message);
-    }
+    await withPendingState(form, async () => {
+      try {
+        // Include optional metadata fields when creating formulation sets from the entry form.
+        const created = await postJson('/api/sets', {
+          skus,
+          material_workstream: (new FormData(form).get('material_workstream') || '').toString().trim(),
+          notes: (new FormData(form).get('notes') || '').toString().trim(),
+        });
+        form.reset();
+        await loadSets(1);
+        alert(`Set created: ${created.set_code || ''}`.trim());
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 
   // Render the paged set list with metadata columns and per-row detail actions.
@@ -633,7 +735,7 @@ function attachSetForm() {
     if (items.length === 0) {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
-      cell.colSpan = 7;
+      cell.colSpan = isAdmin ? 7 : 6;
       cell.textContent = 'No sets found.';
       row.appendChild(cell);
       output.appendChild(row);
@@ -657,15 +759,6 @@ function attachSetForm() {
         notesCell.title = normalizedItem.notes || '';
         const skusCell = document.createElement('td');
         skusCell.textContent = Array.isArray(normalizedItem.sku_list) ? normalizedItem.sku_list.join(', ') : parseList((normalizedItem.sku_list || '').toString()).join(', ');
-        const actionsCell = document.createElement('td');
-        const editButton = document.createElement('button');
-        editButton.type = 'button';
-        editButton.textContent = 'View / Edit';
-        // Load the full set record into the detail panel on demand to keep the list request lightweight.
-        editButton.addEventListener('click', () => {
-          loadSetDetail(normalizedItem.set_code).catch((error) => alert(error.message));
-        });
-        actionsCell.appendChild(editButton);
         row.appendChild(setCodeCell);
         row.appendChild(ownerCell);
         row.appendChild(createdCell);
@@ -673,7 +766,18 @@ function attachSetForm() {
         row.appendChild(materialWorkstreamCell);
         row.appendChild(skusCell);
         row.appendChild(notesCell);
-        row.appendChild(actionsCell);
+        if (isAdmin) {
+          const actionsCell = document.createElement('td');
+          const editButton = document.createElement('button');
+          editButton.type = 'button';
+          editButton.textContent = 'View / Edit';
+          // Load the full set record into the detail panel on demand to keep the list request lightweight.
+          editButton.addEventListener('click', () => {
+            loadSetDetail(normalizedItem.set_code).catch((error) => alert(error.message));
+          });
+          actionsCell.appendChild(editButton);
+          row.appendChild(actionsCell);
+        }
         output.appendChild(row);
       });
     }
@@ -725,19 +829,43 @@ function attachSetForm() {
         alert('Load a set before saving changes.');
         return;
       }
-      try {
-        const updated = await putJson(`/api/sets/${encodeURIComponent(setCode)}`, {
-          material_workstream: (formData.get('material_workstream') || '').toString().trim(),
-          notes: (formData.get('notes') || '').toString().trim(),
-        });
-        detailStatus.textContent = 'Saved.';
-        document.getElementById('set-detail-material-workstream').value = updated.material_workstream || '';
-        document.getElementById('set-detail-notes').value = updated.notes || '';
-        await loadSets(page);
-      } catch (error) {
-        detailStatus.textContent = '';
-        alert(error.message);
+      await withPendingState(detailForm, async () => {
+        try {
+          const updated = await putJson(`/api/sets/${encodeURIComponent(setCode)}`, {
+            material_workstream: (formData.get('material_workstream') || '').toString().trim(),
+            notes: (formData.get('notes') || '').toString().trim(),
+          });
+          detailStatus.textContent = `Saved set ${updated.set_code || setCode}.`;
+          document.getElementById('set-detail-material-workstream').value = updated.material_workstream || '';
+          document.getElementById('set-detail-notes').value = updated.notes || '';
+          await loadSets(page);
+        } catch (error) {
+          detailStatus.textContent = '';
+          alert(error.message);
+        }
+      });
+    });
+  }
+
+  // Allow admins to delete unreferenced sets directly from the detail panel.
+  if (deleteButton && detailForm && detailPanel) {
+    deleteButton.addEventListener('click', async () => {
+      const setCode = (new FormData(detailForm).get('set_code') || '').toString().trim();
+      if (!setCode) {
+        alert('Load a set before deleting.');
+        return;
       }
+      if (!window.confirm(`Delete set ${setCode}? This cannot be undone.`)) return;
+      await withPendingState(detailForm, async () => {
+        try {
+          await fetchJson(`/api/sets/${encodeURIComponent(setCode)}`, { method: 'DELETE' });
+          detailPanel.hidden = true;
+          await loadSets(1);
+          alert(`Set deleted: ${setCode}`);
+        } catch (error) {
+          alert(error.message);
+        }
+      });
     });
   }
 
@@ -832,15 +960,17 @@ function attachDryWeightForm() {
       alert('Dry weights must add up to exactly 100.00%.');
       return;
     }
-    try {
-      await postJson('/api/dry_weights', { set_code: setCode, items });
-      form.reset();
-      buildTable(entryContainer, ['SKU'], [], 'Load a set to enter dry weights.');
-      totalOutput.textContent = '';
-      alert('Dry weight variant created');
-    } catch (error) {
-      alert(error.message);
-    }
+    await withPendingState(form, async () => {
+      try {
+        const created = await postJson('/api/dry_weights', { set_code: setCode, items });
+        form.reset();
+        buildTable(entryContainer, ['SKU'], [], 'Load a set to enter dry weights.');
+        totalOutput.textContent = '';
+        alert(`Dry weight variant created: ${created.weight_code || ''}`.trim());
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 }
 
@@ -983,14 +1113,16 @@ function attachBatchVariantForm() {
       }
       items.push({ sku: select.dataset.sku, ingredient_batch_code: batchCode });
     }
-    try {
-      await postJson('/api/batch_variants', { set_code: setCode, weight_code: weightCode, items });
-      form.reset();
-      buildTable(itemsContainer, ['SKU', 'Batch'], [], 'No SKUs loaded.');
-      alert('Batch variant created');
-    } catch (error) {
-      alert(error.message);
-    }
+    await withPendingState(form, async () => {
+      try {
+        const created = await postJson('/api/batch_variants', { set_code: setCode, weight_code: weightCode, items });
+        form.reset();
+        buildTable(itemsContainer, ['SKU', 'Batch'], [], 'No SKUs loaded.');
+        alert(`Batch variant created: ${created.batch_variant_code || ''}`.trim());
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 }
 
@@ -1487,14 +1619,16 @@ function attachLocationCodePage() {
       alert('Please select a production date.');
       return;
     }
-    try {
-      const created = await postJson('/api/location_codes', payload);
-      clearElement(output);
-      output.appendChild(createCopyTextBlock(created.location_id || '', 'location-copy-output'));
-      await loadLocationCodes(1);
-    } catch (error) {
-      alert(error.message);
-    }
+    await withPendingState(locationForm, async () => {
+      try {
+        const created = await postJson('/api/location_codes', payload);
+        clearElement(output);
+        output.appendChild(createCopyTextBlock(created.location_id || '', 'location-copy-output'));
+        await loadLocationCodes(1);
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 
   // Trigger filter-based search while resetting pagination to the first page.
@@ -1550,14 +1684,16 @@ function attachLocationPartnerUtilityForm() {
       partner_name: (formData.get('partner_name') || '').toString().trim(),
       machine_specification: (formData.get('machine_specification') || '').toString().trim(),
     };
-    try {
-      const created = await postJson('/api/location_codes/partners', payload);
-      alert(`Partner code ${created.partner_code} created.`);
-      partnerForm.reset();
-      await loadPartnerTable();
-    } catch (error) {
-      alert(error.message);
-    }
+    await withPendingState(partnerForm, async () => {
+      try {
+        const created = await postJson('/api/location_codes/partners', payload);
+        alert(`Partner code ${created.partner_code} created.`);
+        partnerForm.reset();
+        await loadPartnerTable();
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 
   loadPartnerTable().catch((error) => alert(error.message));
@@ -1702,24 +1838,27 @@ function attachCompoundingHowPage() {
           return;
         }
 
-        try {
-          await fetchJson(`/api/compounding_how/${encodeURIComponent(item.processing_code || '')}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              failure_mode: failureInput.value,
-              machine_setup_url: machineInput.value,
-              processed_data_url: processedInput.value,
-            }),
-          });
-          editButton.dataset.mode = '';
-          editButton.textContent = 'Edit';
-          failureInput.disabled = true;
-          machineInput.disabled = true;
-          processedInput.disabled = true;
-        } catch (error) {
-          alert(error.message);
-        }
+        await withPendingState(row, async () => {
+          try {
+            await fetchJson(`/api/compounding_how/${encodeURIComponent(item.processing_code || '')}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                failure_mode: failureInput.value,
+                machine_setup_url: machineInput.value,
+                processed_data_url: processedInput.value,
+              }),
+            });
+            editButton.dataset.mode = '';
+            editButton.textContent = 'Edit';
+            failureInput.disabled = true;
+            machineInput.disabled = true;
+            processedInput.disabled = true;
+            alert(`Updated ${item.processing_code || 'record'}.`);
+          } catch (error) {
+            alert(error.message);
+          }
+        });
       });
 
       row.append(processingCodeCell, createdCell, ownerCell, failureCell, machineCell, processedCell, actionCell);
@@ -1748,23 +1887,26 @@ function attachCompoundingHowPage() {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
-    try {
-      await postJson('/api/compounding_how', {
-        location_code: (formData.get('location_code') || '').toString().trim(),
-        process_code_suffix: (formData.get('process_code_suffix') || '').toString().trim(),
-        failure_mode: (formData.get('failure_mode') || '').toString().trim(),
-        machine_setup_url: (formData.get('machine_setup_url') || '').toString().trim(),
-        processed_data_url: (formData.get('processed_data_url') || '').toString().trim(),
-      });
-      form.reset();
-      // After save, fetch the next submitted-based suffix and restore preview helpers.
-      const allocated = await postJson('/api/compounding_how/allocate', {});
-      suffixInput.value = allocated.process_code_suffix || '';
-      updatePreview();
-      await loadItems();
-    } catch (error) {
-      alert(error.message);
-    }
+    await withPendingState(form, async () => {
+      try {
+        const created = await postJson('/api/compounding_how', {
+          location_code: (formData.get('location_code') || '').toString().trim(),
+          process_code_suffix: (formData.get('process_code_suffix') || '').toString().trim(),
+          failure_mode: (formData.get('failure_mode') || '').toString().trim(),
+          machine_setup_url: (formData.get('machine_setup_url') || '').toString().trim(),
+          processed_data_url: (formData.get('processed_data_url') || '').toString().trim(),
+        });
+        form.reset();
+        // After save, fetch the next submitted-based suffix and restore preview helpers.
+        const allocated = await postJson('/api/compounding_how/allocate', {});
+        suffixInput.value = allocated.process_code_suffix || '';
+        updatePreview();
+        await loadItems();
+        alert(`Compounding how created: ${created.processing_code || ''}`.trim());
+      } catch (error) {
+        alert(error.message);
+      }
+    });
   });
 
   loadMeta().then(loadItems).catch((error) => alert(error.message));
@@ -1999,14 +2141,17 @@ function attachPelletBagsPage() {
           payload[input.name] = input.type === 'number' ? numericOrNull(input.value) : (input.value || null);
         });
 
-        await fetchJson(`/api/pellet_bags/${encodeURIComponent(item.pellet_bag_id || '')}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+        await withPendingState(row, async () => {
+          await fetchJson(`/api/pellet_bags/${encodeURIComponent(item.pellet_bag_id || '')}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          button.dataset.mode = '';
+          button.textContent = 'Edit';
+          (row._editable || []).forEach((input) => { input.disabled = true; });
+          alert(`Updated ${item.pellet_bag_code || 'pellet bag'}.`);
         });
-        button.dataset.mode = '';
-        button.textContent = 'Edit';
-        (row._editable || []).forEach((input) => { input.disabled = true; });
       });
       actionTd.appendChild(button);
       row.appendChild(actionTd);
@@ -2042,11 +2187,13 @@ function attachPelletBagsPage() {
       customer: (formData.get('customer') || '').toString(),
     };
 
-    status.textContent = 'Creating...';
-    const created = await postJson('/api/pellet_bags', payload);
-    status.textContent = `Created ${created.items?.length || 0} bag(s).`;
-    renderCreatedCodes(created.items || []);
-    await loadItems();
+    await withPendingState(form, async () => {
+      status.textContent = 'Creating...';
+      const created = await postJson('/api/pellet_bags', payload);
+      status.textContent = `Created ${created.items?.length || 0} bag(s): ${(created.items || []).map((item) => item.pellet_bag_code).filter(Boolean).join(', ')}`;
+      renderCreatedCodes(created.items || []);
+      await loadItems();
+    });
   });
 
   loadMeta().then(loadItems).catch((error) => alert(error.message));
@@ -2344,14 +2491,17 @@ function attachConversion1ProductsPage() {
         (row._editable || []).forEach((input) => {
           payload[input.name] = parseCellValue(input);
         });
-        await fetchJson(`/api/conversion1_products/${encodeURIComponent(item.product_code || '')}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+        await withPendingState(row, async () => {
+          await fetchJson(`/api/conversion1_products/${encodeURIComponent(item.product_code || '')}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          button.dataset.mode = '';
+          button.textContent = 'Edit';
+          (row._editable || []).forEach((input) => { input.disabled = true; });
+          alert(`Updated ${item.product_code || 'product'}.`);
         });
-        button.dataset.mode = '';
-        button.textContent = 'Edit';
-        (row._editable || []).forEach((input) => { input.disabled = true; });
       });
       actionCell.appendChild(button);
       row.appendChild(actionCell);
@@ -2412,8 +2562,9 @@ function attachConversion1ProductsPage() {
     }
 
     status.textContent = 'Creating...';
-    try {
-      const created = await postJson('/api/conversion1_products', {
+    await withPendingState(form, async () => {
+      try {
+        const created = await postJson('/api/conversion1_products', {
         // Required code prefix for generated product codes.
         conversion1_how_code: howCode,
         // Required count controls number of rows created in one request.
@@ -2444,14 +2595,15 @@ function attachConversion1ProductsPage() {
         sd_film_thickness: numberOrNull(sdFilmThicknessInput.value),
         film_thickness_variation_percent: numberOrNull(filmThicknessVariationPercentInput.value),
       });
-      status.textContent = `Created ${created.items?.length || 0} product(s).`;
-      renderCreatedCodes(created.items || []);
-      state.page = 1;
-      await loadItems();
-    } catch (error) {
-      status.textContent = '';
-      showErrors([error.message]);
-    }
+        status.textContent = `Created ${created.items?.length || 0} product(s): ${(created.items || []).map((item) => item.product_code).filter(Boolean).join(', ')}`;
+        renderCreatedCodes(created.items || []);
+        state.page = 1;
+        await loadItems();
+      } catch (error) {
+        status.textContent = '';
+        showErrors([error.message]);
+      }
+    });
   });
 
   filterButton.addEventListener('click', async () => {
