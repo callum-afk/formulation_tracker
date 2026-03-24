@@ -2,7 +2,8 @@
 {% block content %}
 <section class="panel">
   <h2>Create formulation set</h2>
-  <form id="set-form" class="form-stack" data-is-admin="{{ '1' if request.state.user_access.is_admin else '0' }}">
+  {# Mark JS-managed submit forms so delegated native submit pending handling skips them. #}
+  <form id="set-form" class="form-stack" data-is-admin="{{ '1' if request.state.user_access.is_admin else '0' }}" data-async-submit="true">
     <div class="grid" id="sku-selects">
       {# Start with 6 SKU selectors by default, while still allowing users to add more dynamically. #}
       {% for _ in range(6) %}
@@ -88,7 +89,8 @@
     <div><dt>Created</dt><dd id="set-detail-created">-</dd></div>
     <div><dt>SKUs</dt><dd id="set-detail-skus">-</dd></div>
   </dl>
-  <form id="set-detail-form" class="form-stack">
+  {# Mark JS-managed submit forms so delegated native submit pending handling skips them. #}
+  <form id="set-detail-form" class="form-stack" data-async-submit="true">
     {# Hidden code field keeps save requests tied to the currently loaded formulation set. #}
     <input type="hidden" name="set_code" id="set-detail-set-code" />
     <div class="grid">
