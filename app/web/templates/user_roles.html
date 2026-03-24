@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+{% set role_labels = {
+  "sku_codes": "SKU Codes",
+  "formulations": "Formulations",
+  "formulations_mix": "Formulations + Mix",
+  "admin": "Admin"
+} %}
 <section class="panel">
   <!-- Provide one straightforward admin form for creating new users or updating existing role assignments. -->
   <h2>Add or update user</h2>
@@ -14,7 +20,7 @@
     <label>Permission group
       <select name="role_group" required>
         {% for option in role_options %}
-        <option value="{{ option }}">{{ option }}</option>
+        <option value="{{ option }}">{{ role_labels.get(option, option) }}</option>
         {% endfor %}
       </select>
     </label>
@@ -51,7 +57,7 @@
           <td>{{ row.email }}</td>
           <td>{{ row.first_name or "" }}</td>
           <td>{{ row.last_name or "" }}</td>
-          <td>{{ row.role_group }}</td>
+          <td>{{ role_labels.get(row.role_group, row.role_group) }}</td>
           <td>{{ (row.permissions or []) | join(', ') }}</td>
           <td>{{ 'Yes' if row.is_active else 'No' }}</td>
           <td>
@@ -62,7 +68,7 @@
               <input type="hidden" name="last_name" value="{{ row.last_name or '' }}" />
               <select name="role_group">
                 {% for option in role_options %}
-                <option value="{{ option }}" {% if option == row.role_group %}selected{% endif %}>{{ option }}</option>
+                <option value="{{ option }}" {% if option == row.role_group %}selected{% endif %}>{{ role_labels.get(option, option) }}</option>
                 {% endfor %}
               </select>
               <select name="is_active">

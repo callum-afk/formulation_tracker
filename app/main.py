@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from app.auth import get_auth_context
 from app.dependencies import init_services, init_settings
@@ -26,6 +27,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 app = FastAPI(title="Formulation Tracker")
+templates = Jinja2Templates(directory="app/web/templates")
 
 
 @app.on_event("startup")
@@ -94,6 +96,22 @@ async def auth_middleware(request: Request, call_next):
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True}
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # Render a dedicated forbidden page for browser requests blocked by permission guards.
+    if exc.status_code == 403 and "text/html" in (request.headers.get("accept") or "").lower():
+        return templates.TemplateResponse(
+            "forbidden.html",
+            {
+                "request": request,
+                "title": "Forbidden",
+            },
+            status_code=403,
+        )
+    # Preserve JSON-style HTTPException responses for API calls and non-browser clients.
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 app.include_router(ingredients_router)
 app.include_router(batches_router)

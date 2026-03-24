@@ -33,22 +33,60 @@ PERMISSIONS = {
     "status_lists.edit",
 }
 
-# Capture the restricted Group 1 permissions as a named reusable set.
-SKU_CODES_PERMISSIONS = {"ingredients.view", "ingredients.edit"}
-# Capture the restricted Group 2 permissions, including dry-weight visibility, as a named reusable set.
+# Capture the SKU Codes role permissions as one explicit reusable set.
+SKU_CODES_PERMISSIONS = {
+    "batches.edit",
+    "batches.view",
+    "dashboard.view",
+    "ingredients.edit",
+    "ingredients.view",
+    "pellet_bags.view",
+    "sets.edit",
+    "status_lists.edit",
+    "status_lists.view",
+    "utilities.view",
+}
+# Capture the Formulations role permissions as one explicit reusable set.
 FORMULATIONS_PERMISSIONS = {
+    "batch_selection.edit",
+    "batch_selection.view",
+    "batches.edit",
+    "batches.view",
+    "dashboard.view",
+    "dry_weights.edit",
+    "dry_weights.view",
+    "ingredients.edit",
+    "ingredients.view",
     "sets.view",
     "sets.edit",
-    "dry_weights.view",
-    "dry_weights.edit",
-    "batch_selection.view",
-    "batch_selection.edit",
+    "status_lists.edit",
+    "status_lists.view",
+    "utilities.view",
 }
-# Group 3 explicitly means "everything except Group 1 and Group 2 pages".
-MATERIALS_PERMISSIONS = {
-    permission
-    for permission in PERMISSIONS
-    if permission not in SKU_CODES_PERMISSIONS and permission not in FORMULATIONS_PERMISSIONS
+# Capture the Formulations + Mix role permissions as one explicit reusable set.
+FORMULATIONS_MIX_PERMISSIONS = {
+    "batch_selection.edit",
+    "batch_selection.view",
+    "batches.edit",
+    "batches.view",
+    "compounding_how.edit",
+    "compounding_how.view",
+    "conversion1.edit",
+    "conversion1.view",
+    "dashboard.view",
+    "dry_weights.edit",
+    "dry_weights.view",
+    "ingredients.edit",
+    "ingredients.view",
+    "location_codes.edit",
+    "location_codes.view",
+    "pellet_bags.edit",
+    "pellet_bags.view",
+    "sets.edit",
+    "sets.view",
+    "status_lists.edit",
+    "status_lists.view",
+    "utilities.view",
 }
 # Admin inherits every defined permission.
 ADMIN_PERMISSIONS = set(PERMISSIONS)
@@ -57,7 +95,7 @@ ADMIN_PERMISSIONS = set(PERMISSIONS)
 ROLE_GROUP_PERMISSIONS = {
     "sku_codes": SKU_CODES_PERMISSIONS,
     "formulations": FORMULATIONS_PERMISSIONS,
-    "materials": MATERIALS_PERMISSIONS,
+    "formulations_mix": FORMULATIONS_MIX_PERMISSIONS,
     "admin": ADMIN_PERMISSIONS,
 }
 
