@@ -5,12 +5,13 @@ from pathlib import Path
 from typing import Dict
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings, get_storage
 from app.models import ApiResponse, IngredientCreate, IngredientImport, UploadConfirm, UploadRequest
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import format_sku, parse_sku
+from app.services.permission_service import require_permission
 from app.services.storage_service import StorageService
 from app.validators import ValidationError, validate_format, validate_pack_size_unit, validate_pack_size_value
 
@@ -41,10 +42,13 @@ def _normalize_spec_grade(spec_grade: str | None) -> str | None:
 @router.post("", response_model=ApiResponse)
 def create_ingredient(
     payload: IngredientCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Enforce server-side ingredient edit access before any validation or writes occur.
+    require_permission(request, "ingredients.edit")
     try:
         _validate_ingredient(payload)
     except ValidationError as exc:
@@ -106,9 +110,12 @@ def create_ingredient(
 @router.post("/import", response_model=ApiResponse)
 def import_ingredient(
     payload: IngredientImport,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
+    # Enforce server-side ingredient edit access before importing an explicit SKU.
+    require_permission(request, "ingredients.edit")
     try:
         _validate_ingredient(payload)
         category_code, seq, pack_size_value = parse_sku(payload.sku)
@@ -182,6 +189,7 @@ def import_ingredient(
 
 @router.get("", response_model=ApiResponse)
 def list_ingredients(
+    request: Request,
     q: str | None = None,
     category_code: int | None = None,
     format: str | None = None,
@@ -189,6 +197,8 @@ def list_ingredients(
     is_active: bool | None = None,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
+    # Enforce server-side ingredient view access for the listing API as well as the page route.
+    require_permission(request, "ingredients.view")
     filters: Dict[str, object] = {}
     if q:
         filters["q"] = q
@@ -205,7 +215,9 @@ def list_ingredients(
 
 
 @router.get("/{sku}", response_model=ApiResponse)
-def get_ingredient(sku: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def get_ingredient(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+    # Enforce ingredient detail access on the API route so hidden menu items are not enough.
+    require_permission(request, "ingredients.view")
     ingredient = bigquery.get_ingredient(sku)
     if not ingredient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
@@ -215,6 +227,7 @@ def get_ingredient(sku: str, bigquery: BigQueryService = Depends(get_bigquery)) 
 @router.post("/{sku}/msds", response_model=ApiResponse)
 async def upload_msds(
     sku: str,
+    request: Request,
     file: UploadFile = File(...),
     replace_confirmed: bool = Form(False),
     bigquery: BigQueryService = Depends(get_bigquery),
@@ -222,6 +235,8 @@ async def upload_msds(
     settings=Depends(get_settings),
     actor=Depends(get_actor),
 ) -> ApiResponse:
+    # Restrict MSDS uploads to users with ingredient edit rights.
+    require_permission(request, "ingredients.edit")
     ingredient = bigquery.get_ingredient(sku)
     if not ingredient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")

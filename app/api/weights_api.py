@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings
 from app.models import ApiResponse, DryWeightCreate
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import int_to_code
 from app.services.hashing_service import hash_weights
+from app.services.permission_service import require_permission
 from app.validators import ValidationError, round_weight, validate_weight_sum
 
 router = APIRouter(prefix="/api/dry_weights", tags=["weights"])
@@ -15,10 +16,13 @@ router = APIRouter(prefix="/api/dry_weights", tags=["weights"])
 @router.post("", response_model=ApiResponse)
 def create_weights(
     payload: DryWeightCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Enforce dry-weight edit access before any formulation percentage data is processed or saved.
+    require_permission(request, "dry_weights.edit")
     set_row = bigquery.get_set(payload.set_code)
     if not set_row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
@@ -54,8 +58,9 @@ def create_weights(
 
 
 @router.get("", response_model=ApiResponse)
-def list_weights(set_code: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_weights(set_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Normalize lookup codes so searches work the same for lowercase and uppercase user input.
+    require_permission(request, "dry_weights.view")
     normalized_set_code = set_code.strip().upper()
     rows = bigquery.list_weights(normalized_set_code)
     return ApiResponse(ok=True, data={"items": rows})

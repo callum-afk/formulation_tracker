@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from urllib.parse import urlparse
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -11,6 +11,7 @@ from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.api.pellet_bags_api import DEFAULT_ASSIGNEE_EMAILS, STATUS_LIST_COLUMN_WHITELIST, get_allowed_status_options, normalize_status_value
 from app.constants import MATERIAL_WORKSTREAM_OPTIONS
 from app.services.bigquery_service import BigQueryService
+from app.services.permission_service import can_view_dry_weights, require_permission
 from app.services.storage_service import StorageService
 
 router = APIRouter()
@@ -92,6 +93,8 @@ def _resolve_conversion1_how_codes(process_code: str, processing_code: str, subm
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Enforce dashboard access server-side before loading any shared operational data.
+    require_permission(request, "dashboard.view")
     # Build dashboard sections grouped into quality control and processing workstreams.
     status_sections = [
         {
@@ -119,6 +122,7 @@ async def dashboard(request: Request, bigquery: BigQueryService = Depends(get_bi
 @router.get("/about", response_class=HTMLResponse)
 async def about(request: Request, q: str | None = None, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Preserve previous landing page behaviour under a dedicated informational route.
+    require_permission(request, "ingredients.view")
     filters = {"q": q} if q else {}
     items = bigquery.list_ingredients(filters)
     return templates.TemplateResponse(
@@ -129,6 +133,8 @@ async def about(request: Request, q: str | None = None, bigquery: BigQueryServic
 
 @router.get("/ingredients", response_class=HTMLResponse)
 async def ingredients(request: Request, q: str | None = None, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Enforce Group 1 access for the ingredient listing page.
+    require_permission(request, "ingredients.view")
     filters = {"q": q} if q else {}
     items = bigquery.list_ingredients(filters)
     return templates.TemplateResponse(
@@ -139,6 +145,8 @@ async def ingredients(request: Request, q: str | None = None, bigquery: BigQuery
 
 @router.get("/ingredient_import", response_class=HTMLResponse)
 async def ingredient_import(request: Request) -> HTMLResponse:
+    # Restrict ingredient import to users who can edit ingredient records.
+    require_permission(request, "ingredients.edit")
     return templates.TemplateResponse(
         "ingredient_import.html",
         {"request": request, "title": "Ingredient Import"},
@@ -148,6 +156,7 @@ async def ingredient_import(request: Request) -> HTMLResponse:
 @router.get("/utilities", response_class=HTMLResponse)
 async def utilities(request: Request) -> HTMLResponse:
     # Serve utility workflows (SKU import and partner-code creation) on a single page.
+    require_permission(request, "utilities.view")
     return templates.TemplateResponse(
         "utilities.html",
         {"request": request, "title": "Utilities"},
@@ -156,6 +165,8 @@ async def utilities(request: Request) -> HTMLResponse:
 
 @router.get("/batches", response_class=HTMLResponse)
 async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Allow only users with batch visibility to browse batch lookup entry points.
+    require_permission(request, "batches.view")
     items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "batches.html",
@@ -165,6 +176,8 @@ async def batches(request: Request, bigquery: BigQueryService = Depends(get_bigq
 
 @router.get("/batches/{sku}/{batch_code}", response_class=HTMLResponse)
 async def batch_detail(sku: str, batch_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Enforce batch-detail access before querying the requested record.
+    access = require_permission(request, "batches.view")
     # Retrieve full batch details for the selected SKU + batch code pair.
     batch = bigquery.get_batch(sku, batch_code)
     if not batch:
@@ -177,6 +190,7 @@ async def batch_detail(sku: str, batch_code: str, request: Request, bigquery: Bi
             "sku": sku,
             "batch_code": batch_code,
             "batch": batch,
+            "show_dry_weights": can_view_dry_weights(access),
         },
     )
 
@@ -184,6 +198,7 @@ async def batch_detail(sku: str, batch_code: str, request: Request, bigquery: Bi
 @router.get("/sets", response_class=HTMLResponse)
 async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Load ingredient options for set creation; existing set rows are fetched client-side with pagination.
+    require_permission(request, "sets.view")
     items = bigquery.list_ingredients({})
     return templates.TemplateResponse(
         "sets.html",
@@ -198,6 +213,8 @@ async def sets(request: Request, bigquery: BigQueryService = Depends(get_bigquer
 
 @router.get("/dry_weights", response_class=HTMLResponse)
 async def dry_weights(request: Request) -> HTMLResponse:
+    # Restrict the dry-weights page to Group 2 users and admins only.
+    require_permission(request, "dry_weights.view")
     return templates.TemplateResponse(
         "dry_weights.html",
         {"request": request, "title": "Dry Weights"},
@@ -206,6 +223,8 @@ async def dry_weights(request: Request) -> HTMLResponse:
 
 @router.get("/batch_selection", response_class=HTMLResponse)
 async def batch_selection(request: Request) -> HTMLResponse:
+    # Restrict the batch-selection page to Group 2 users and admins only.
+    require_permission(request, "batch_selection.view")
     return templates.TemplateResponse(
         "batch_selection.html",
         {"request": request, "title": "Batch Selection"},
@@ -216,6 +235,7 @@ async def batch_selection(request: Request) -> HTMLResponse:
 @router.get("/location_codes", response_class=HTMLResponse)
 async def location_codes(request: Request) -> HTMLResponse:
     # Serve the location-ID workflow page for production partner/date code generation and partner management.
+    require_permission(request, "location_codes.view")
     return templates.TemplateResponse(
         "location_codes.html",
         {"request": request, "title": "Machine"},
@@ -227,6 +247,7 @@ async def location_codes(request: Request) -> HTMLResponse:
 @router.get("/compounding_how", response_class=HTMLResponse)
 async def compounding_how(request: Request) -> HTMLResponse:
     # Serve compounding-how creation and edit workflow page.
+    require_permission(request, "compounding_how.view")
     return templates.TemplateResponse(
         "compounding_how.html",
         {"request": request, "title": "How"},
@@ -241,6 +262,7 @@ async def conversion1_context_page(
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> HTMLResponse:
     # Clamp pagination arguments so table browsing remains within safe global bounds.
+    require_permission(request, "conversion1.view")
     safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     safe_page = max(1, page)
     # Load conversion-code rows for the Context page table and apply optional text filtering.
@@ -290,6 +312,7 @@ async def conversion1_context_page(
 @router.post("/conversion1/context", response_class=HTMLResponse)
 async def conversion1_context_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Parse and normalize Context form fields while preserving both dropdown and manual pellet entry.
+    require_permission(request, "conversion1.edit")
     form = await request.form()
     pellet_code_select = " ".join(str(form.get("pellet_code_select", "")).strip().split())
     pellet_code_manual = " ".join(str(form.get("pellet_code_manual", "")).strip().split())
@@ -386,6 +409,7 @@ async def conversion1_how_page(
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> HTMLResponse:
     # Clamp pagination arguments so browsing remains bounded and consistent with global limits.
+    require_permission(request, "conversion1.view")
     safe_page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     safe_page = max(1, page)
     # Load newest Conversion 1 How entries and optional filter state for table rendering.
@@ -420,6 +444,7 @@ async def conversion1_how_page(
 @router.post("/conversion1/how", response_class=HTMLResponse)
 async def conversion1_how_submit(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Parse and normalize form values including both context-code input variants.
+    require_permission(request, "conversion1.edit")
     form = await request.form()
     context_code_select = " ".join(str(form.get("context_code_select", "")).strip().split())
     context_code_manual = " ".join(str(form.get("context_code_manual", "")).strip().split())
@@ -545,6 +570,7 @@ async def conversion1_how_submit(request: Request, bigquery: BigQueryService = D
 @router.get("/conversion1/products", response_class=HTMLResponse)
 async def conversion1_products_page(request: Request) -> HTMLResponse:
     # Serve Conversion 1 Products management page; data is loaded via API to mirror pellet-bag UX.
+    require_permission(request, "conversion1.view")
     return templates.TemplateResponse(
         "conversion1_products.html",
         {"request": request, "title": "Conversion 1"},
@@ -553,6 +579,7 @@ async def conversion1_products_page(request: Request) -> HTMLResponse:
 @router.get("/pellet-bags/status/{status_column}", response_class=HTMLResponse)
 async def pellet_bag_status_list(status_column: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Validate status stream names from the path so only approved dashboard pages can render/edit data.
+    require_permission(request, "status_lists.view")
     if status_column not in STATUS_LIST_COLUMN_WHITELIST:
         raise HTTPException(status_code=404, detail="Status page not found")
 
@@ -583,6 +610,7 @@ async def pellet_bag_status_list(status_column: str, request: Request, bigquery:
 @router.get("/pellet_bags", response_class=HTMLResponse)
 async def pellet_bags(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Serve pellet bag code minting and management workflow page.
+    require_permission(request, "pellet_bags.view")
     return templates.TemplateResponse(
         "pellet_bags.html",
         {"request": request, "title": "Pellet Bags", "compounding_how_codes": bigquery.list_compounding_how_codes()},
@@ -591,6 +619,8 @@ async def pellet_bags(request: Request, bigquery: BigQueryService = Depends(get_
 
 @router.get("/ingredients/{sku}/edit", response_class=HTMLResponse)
 async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Restrict ingredient edits to users with ingredient edit rights.
+    require_permission(request, "ingredients.edit")
     ingredient = bigquery.get_ingredient(sku)
     if not ingredient:
         raise HTTPException(status_code=404, detail="Ingredient not found")
@@ -603,36 +633,84 @@ async def ingredient_edit(sku: str, request: Request, bigquery: BigQueryService 
 @router.get("/ingredients/{sku}", response_class=HTMLResponse)
 async def sku_detail(sku: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Render a SKU summary page with linked formulation and pellet bag context.
-    summary = bigquery.get_sku_summary(sku)
+    access = require_permission(request, "ingredients.view")
+    # Filter formulation sections entirely for users who may not view dry weights.
+    summary = bigquery.get_sku_summary_filtered(sku, include_formulations=can_view_dry_weights(access))
     if not summary.get("ingredient"):
         raise HTTPException(status_code=404, detail="Ingredient not found")
     return templates.TemplateResponse(
         "sku_detail.html",
-        {"request": request, "title": f"SKU {sku}", "sku": sku, "summary": summary},
+        {"request": request, "title": f"SKU {sku}", "sku": sku, "summary": summary, "show_formulations": can_view_dry_weights(access)},
     )
 
 
 @router.get("/pellet-bags/{pellet_bag_code}", response_class=HTMLResponse)
 async def pellet_bag_detail(pellet_bag_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
     # Render one pellet bag detail page with all known fields and compounding context.
-    detail = bigquery.get_pellet_bag_detail(pellet_bag_code)
+    access = require_permission(request, "pellet_bags.view")
+    # Filter embedded formulation percentage payloads before rendering the page for restricted users.
+    detail = bigquery.get_pellet_bag_detail_filtered(pellet_bag_code, include_dry_weights=can_view_dry_weights(access))
     if not detail:
         raise HTTPException(status_code=404, detail="Pellet bag not found")
     return templates.TemplateResponse(
         "pellet_bag_detail.html",
-        {"request": request, "title": f"Pellet bag {pellet_bag_code}", "detail": _to_json_safe(detail)},
+        {"request": request, "title": f"Pellet bag {pellet_bag_code}", "detail": _to_json_safe(detail), "show_dry_weights": can_view_dry_weights(access)},
     )
 
 
 @router.get("/ingredients/{sku}/msds")
 async def ingredient_msds_download(
     sku: str,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     storage: StorageService = Depends(get_storage),
     settings=Depends(get_settings),
 ):
+    # Apply the same ingredient page guard to direct MSDS downloads.
+    require_permission(request, "ingredients.view")
     ingredient = bigquery.get_ingredient(sku)
     if not ingredient or not ingredient.get("msds_object_path"):
         raise HTTPException(status_code=404, detail="MSDS not found")
     url = storage.generate_download_url(settings.bucket_msds, ingredient["msds_object_path"], ttl_minutes=10)
     return RedirectResponse(url=url, status_code=302)
+
+
+@router.get("/admin/user-roles", response_class=HTMLResponse)
+async def user_roles_page(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Restrict the admin page to users allowed to manage roles.
+    require_permission(request, "admin.user_roles.view")
+    # Load all user-role rows for the admin grid and include resolved permissions for clarity.
+    rows = bigquery.list_user_roles()
+    return templates.TemplateResponse(
+        "user_roles.html",
+        {
+            "request": request,
+            "title": "User Roles",
+            "role_options": ["sku_codes", "formulations", "materials", "admin"],
+            "rows": rows,
+        },
+    )
+
+
+@router.post("/admin/user-roles", response_class=HTMLResponse)
+async def user_roles_submit(
+    request: Request,
+    email: str = Form(...),
+    first_name: str = Form(""),
+    last_name: str = Form(""),
+    role_group: str = Form(...),
+    is_active: str = Form("true"),
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> HTMLResponse:
+    # Restrict role edits to admins only and then persist the submitted role assignment.
+    require_permission(request, "admin.user_roles.edit")
+    bigquery.create_or_update_user_role(
+        email=email.strip().lower(),
+        first_name=first_name.strip() or None,
+        last_name=last_name.strip() or None,
+        role_group=role_group.strip().lower(),
+        is_active=is_active.strip().lower() == "true",
+        actor_email=request.state.user_email,
+    )
+    # Redirect after POST so refreshes do not resubmit the same admin change accidentally.
+    return RedirectResponse(url="/admin/user-roles", status_code=status.HTTP_303_SEE_OTHER)

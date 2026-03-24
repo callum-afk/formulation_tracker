@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, Conversion1ProductCreate, Conversion1ProductUpdate
 from app.services.bigquery_service import BigQueryService
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/conversion1_products", tags=["conversion1_products"])
 
@@ -89,8 +90,9 @@ def _validate_update_payload(payload: dict, *, update: bool = False) -> dict:
 
 
 @router.get("/meta", response_model=ApiResponse)
-def get_conversion1_product_meta() -> ApiResponse:
+def get_conversion1_product_meta(request: Request) -> ApiResponse:
     # Return dropdown option payload used by create and inline-edit controls.
+    require_permission(request, "conversion1.view")
     return ApiResponse(
         ok=True,
         data={
@@ -102,19 +104,22 @@ def get_conversion1_product_meta() -> ApiResponse:
 
 
 @router.get("/how_codes", response_model=ApiResponse)
-def list_conversion1_how_codes(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_conversion1_how_codes(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Return active Conversion 1 How codes for dropdown selection in the create panel.
+    require_permission(request, "conversion1.view")
     return ApiResponse(ok=True, data={"items": bigquery.list_conversion1_how_codes()})
 
 
 @router.get("", response_model=ApiResponse)
 def list_conversion1_products(
+    request: Request,
     search: str | None = None,
     page: int = 1,
     page_size: int = 50,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     # Clamp pagination settings to safe bounds before loading table rows.
+    require_permission(request, "conversion1.view")
     safe_page = max(1, page)
     safe_page_size = max(1, min(page_size, 200))
     rows, total = bigquery.list_conversion1_products(
@@ -128,10 +133,12 @@ def list_conversion1_products(
 @router.post("", response_model=ApiResponse)
 def create_conversion1_products(
     payload: Conversion1ProductCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Ensure create requests can only reference active existing Conversion 1 How rows.
+    require_permission(request, "conversion1.edit")
     if not bigquery.conversion1_how_exists(payload.conversion1_how_code):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid conversion1_how_code")
 
@@ -151,10 +158,12 @@ def create_conversion1_products(
 def update_conversion1_product(
     product_code: str,
     payload: Conversion1ProductUpdate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Validate constrained update fields before issuing the patch operation.
+    require_permission(request, "conversion1.edit")
     validated = _validate_update_payload(payload.dict(exclude_unset=True), update=True)
     updated = bigquery.update_conversion1_product(
         product_code=product_code,

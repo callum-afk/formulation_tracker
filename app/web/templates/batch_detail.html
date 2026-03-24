@@ -17,7 +17,7 @@
 <section class="panel">
   <!-- Linked formulations table surfaces all impacted formulations for traceability. -->
   <h2>Formulations containing this batch</h2>
-  <div id="batch-detail-formulations" data-sku="{{ sku }}" data-batch-code="{{ batch_code }}">
+  <div id="batch-detail-formulations" data-sku="{{ sku }}" data-batch-code="{{ batch_code }}" data-show-dry-weights="{{ 'true' if show_dry_weights else 'false' }}">
     <table>
       <tbody>
         <tr><td>Loading formulations…</td></tr>

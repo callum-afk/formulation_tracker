@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, CompoundingHowCreate, CompoundingHowUpdate
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import code_to_int, int_to_code
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/compounding_how", tags=["compounding_how"])
 
@@ -13,23 +14,28 @@ router = APIRouter(prefix="/api/compounding_how", tags=["compounding_how"])
 
 
 @router.get("/meta", response_model=ApiResponse)
-def get_compounding_how_meta(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def get_compounding_how_meta(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Provide dropdown metadata for location code and failure mode selectors on initial page load.
+    require_permission(request, "compounding_how.view")
     return ApiResponse(ok=True, data={"location_codes": bigquery.list_location_code_ids(), "failure_modes": bigquery.get_failure_modes()})
 
 
 @router.get("", response_model=ApiResponse)
-def list_compounding_how(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_compounding_how(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Return all active compounding how entries for the table beneath the creation form.
+    require_permission(request, "compounding_how.view")
     return ApiResponse(ok=True, data={"items": bigquery.list_compounding_how()})
 
 
 @router.post("", response_model=ApiResponse)
 def create_compounding_how(
     payload: CompoundingHowCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
+    # Restrict compounding-how creation to users with edit rights.
+    require_permission(request, "compounding_how.edit")
     # Guard process suffix format so processing codes remain two-letter AB-style values.
     suffix = (payload.process_code_suffix or "").strip().upper()
     if len(suffix) != 2 or not suffix.isalpha():
@@ -58,8 +64,9 @@ def create_compounding_how(
 
 
 @router.post("/allocate", response_model=ApiResponse)
-def allocate_process_suffix(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def allocate_process_suffix(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Derive suffix from the latest submitted record so repeated "generate" clicks do not consume values.
+    require_permission(request, "compounding_how.edit")
     last_suffix = bigquery.get_next_compounding_process_suffix()
     if not last_suffix:
         return ApiResponse(ok=True, data={"process_code_suffix": int_to_code(1)})
@@ -71,10 +78,12 @@ def allocate_process_suffix(bigquery: BigQueryService = Depends(get_bigquery)) -
 def update_compounding_how(
     processing_code: str,
     payload: CompoundingHowUpdate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Validate editable failure mode on update to enforce the same controlled vocabulary as create.
+    require_permission(request, "compounding_how.edit")
     if payload.failure_mode not in bigquery.get_failure_modes():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid failure mode")
     bigquery.update_compounding_how(

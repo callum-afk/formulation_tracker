@@ -4,12 +4,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.dependencies import get_actor, get_bigquery, get_settings, get_storage
 from app.models import ApiResponse, IngredientBatchCreate, UploadConfirm, UploadRequest
 from app.services.bigquery_service import BigQueryService
+from app.services.permission_service import can_view_dry_weights, require_permission
 from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/api/ingredient_batches", tags=["batches"])
@@ -25,9 +26,12 @@ def _safe_filename(filename: str) -> str:
 @router.post("", response_model=ApiResponse)
 def create_batch(
     payload: IngredientBatchCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
+    # Enforce batch edit access before any batch record is created.
+    require_permission(request, "batches.edit")
     ingredient = bigquery.get_ingredient(payload.sku)
     if not ingredient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ingredient not found")
@@ -67,12 +71,15 @@ def create_batch(
 
 @router.get("", response_model=ApiResponse)
 def list_batches(
+    request: Request,
     sku: str | None = None,
     batch_code: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
+    # Enforce batch listing access server-side for the supporting API endpoint.
+    require_permission(request, "batches.view")
     # Support all-batch listing with optional SKU and batch-code filters for scalable lookup workflows.
     rows, total = bigquery.list_batches_paginated(
         sku=sku.strip() if sku else None,
@@ -84,13 +91,17 @@ def list_batches(
 
 
 @router.get("/{sku}/{batch_code}", response_model=ApiResponse)
-def get_batch_detail(sku: str, batch_code: str, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def get_batch_detail(sku: str, batch_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Load the batch record first so we can return a clear 404 for unknown batch lookups.
+    access = require_permission(request, "batches.view")
     batch = bigquery.get_batch(sku, batch_code)
     if not batch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
     # Fetch formulations that reference this exact SKU + batch code pairing.
     formulations = bigquery.list_formulations_by_batch(sku, batch_code)
+    # Strip dry-weight payloads for users who are not allowed to view formulation percentages.
+    if not can_view_dry_weights(access):
+        formulations = bigquery.strip_dry_weight_data(formulations)
     return ApiResponse(ok=True, data={"batch": batch, "formulations": formulations})
 
 
@@ -98,12 +109,15 @@ def get_batch_detail(sku: str, batch_code: str, bigquery: BigQueryService = Depe
 async def upload_coa(
     sku: str,
     batch_code: str,
+    request: Request,
     file: UploadFile = File(...),
     replace_confirmed: bool = Form(False),
     bigquery: BigQueryService = Depends(get_bigquery),
     storage: StorageService = Depends(get_storage),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Restrict CoA uploads to users with batch edit rights.
+    require_permission(request, "batches.edit")
     batch = bigquery.get_batch(sku, batch_code)
     if not batch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
@@ -140,10 +154,13 @@ def spec_upload_url(
     sku: str,
     batch_code: str,
     payload: UploadRequest,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     storage: StorageService = Depends(get_storage),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Restrict presigned spec uploads to users with batch edit rights.
+    require_permission(request, "batches.edit")
     if payload.content_type != "application/pdf":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
     if payload.content_length > MAX_UPLOAD_BYTES:
@@ -162,10 +179,13 @@ def spec_confirm(
     sku: str,
     batch_code: str,
     payload: UploadConfirm,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     storage: StorageService = Depends(get_storage),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Restrict upload confirmation to users with batch edit rights.
+    require_permission(request, "batches.edit")
     if payload.content_type != "application/pdf":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
     if payload.content_length > MAX_UPLOAD_BYTES:
@@ -180,10 +200,13 @@ def spec_confirm(
 def spec_download_url(
     sku: str,
     batch_code: str,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     storage: StorageService = Depends(get_storage),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Restrict spec downloads to users with batch view rights.
+    require_permission(request, "batches.view")
     batches = bigquery.list_batches(sku)
     match = next((batch for batch in batches if batch["ingredient_batch_code"] == batch_code), None)
     if not match or not match.get("spec_object_path"):

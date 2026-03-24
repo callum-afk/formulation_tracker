@@ -1116,14 +1116,20 @@ function createUrlCellContent(urlValue) {
 }
 
 // Render formulation rows with HTML rowspans so sku/weight/batch lines align like the reference.
-function renderFormulationsTable(output, items) {
+function renderFormulationsTable(output, items, options = {}) {
+  // Default to showing dry weights unless the caller explicitly disables the restricted column.
+  const showDryWeights = options.showDryWeights !== false;
   clearElement(output);
   const table = document.createElement('table');
   // Mark this table so CSS can target formulation hover behavior without affecting other tables.
   table.classList.add('formulations-table');
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  ['Formulation', 'Created', 'Owner', 'SKU Count', 'SKUs', 'Dry Weights (%)', 'Batches'].forEach((label) => {
+  const headers = ['Formulation', 'Created', 'Owner', 'SKU Count', 'SKUs'];
+  // Add the dry-weight column only for users who are allowed to see formulation percentages.
+  if (showDryWeights) headers.push('Dry Weights (%)');
+  headers.push('Batches');
+  headers.forEach((label) => {
     const th = document.createElement('th');
     th.textContent = label;
     headRow.appendChild(th);
@@ -1135,7 +1141,7 @@ function renderFormulationsTable(output, items) {
   if (!items.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 7;
+    cell.colSpan = headers.length;
     cell.textContent = 'No formulations found.';
     row.appendChild(cell);
     tbody.appendChild(row);
@@ -1184,14 +1190,17 @@ function renderFormulationsTable(output, items) {
       const skuCell = document.createElement('td');
       skuCell.classList.add('formulation-detail-cell');
       skuCell.textContent = sku;
-      const weightCell = document.createElement('td');
-      weightCell.classList.add('formulation-detail-cell');
-      weightCell.textContent = sku === '—' ? '—' : formatPercent(weightMap.get(sku));
       const batchCell = document.createElement('td');
       batchCell.classList.add('formulation-detail-cell');
       batchCell.textContent = sku === '—' ? '—' : (batchMap.get(sku) || '');
       row.appendChild(skuCell);
-      row.appendChild(weightCell);
+      // Append the dry-weight cell only when the current viewer is permitted to see percentage data.
+      if (showDryWeights) {
+        const weightCell = document.createElement('td');
+        weightCell.classList.add('formulation-detail-cell');
+        weightCell.textContent = sku === '—' ? '—' : formatPercent(weightMap.get(sku));
+        row.appendChild(weightCell);
+      }
       row.appendChild(batchCell);
       tbody.appendChild(row);
     });
@@ -1767,13 +1776,15 @@ function attachBatchDetailFormulations() {
   if (!container) return;
   const sku = container.dataset.sku;
   const batchCode = container.dataset.batchCode;
+  // Read the server-rendered permission flag so restricted users never see a dry-weight column placeholder.
+  const showDryWeights = container.dataset.showDryWeights !== 'false';
   fetch(`/api/ingredient_batches/${encodeURIComponent(sku)}/${encodeURIComponent(batchCode)}`)
     .then((response) => response.json())
     .then((data) => {
       if (!data.ok) {
         throw new Error(data.error || 'Error loading formulations for batch');
       }
-      renderFormulationsTable(container, data.data.formulations || []);
+      renderFormulationsTable(container, data.data.formulations || [], { showDryWeights });
     })
     .catch((error) => {
       buildTable(container, ['Error'], [[error.message]], '');
@@ -2459,6 +2470,8 @@ function attachPelletBagDetailFormulations() {
   // Locate the pellet detail formulation container and exit on non-detail routes.
   const container = document.getElementById('pellet-detail-formulations');
   if (!container) return;
+  // Read the server-rendered permission flag so embedded detail tables match backend filtering.
+  const showDryWeights = container.dataset.showDryWeights !== 'false';
 
   // Read embedded JSON payload prepared by the server route to avoid an extra API round-trip.
   const dataNode = document.getElementById('pellet-detail-formulations-data');
@@ -2467,7 +2480,7 @@ function attachPelletBagDetailFormulations() {
   try {
     // Parse formulations and reuse the shared formulation table renderer for matching styles.
     const formulations = JSON.parse(dataNode.textContent || '[]');
-    renderFormulationsTable(container, Array.isArray(formulations) ? formulations : []);
+    renderFormulationsTable(container, Array.isArray(formulations) ? formulations : [], { showDryWeights });
     // Apply reusable sticky first-column behaviour used by the formulation page table.
     const table = container.querySelector('table');
     decorateReusableTable(table, 0);

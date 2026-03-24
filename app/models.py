@@ -13,6 +13,40 @@ class ApiResponse(BaseModel):
     error: Optional[str] = None
 
 
+class UserRoleUpsert(BaseModel):
+    # Store email in normalized lowercase form so request-state lookups match persisted rows reliably.
+    email: str
+    # Keep names optional to support phased admin data entry without blocking record creation.
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    # Persist the named role profile so permission resolution stays explicit and maintainable.
+    role_group: str
+    # Allow admins to disable users without deleting audit history.
+    is_active: bool = True
+
+    @validator("email", pre=True)
+    def normalize_email(cls, value: str) -> str:
+        # Trim whitespace and lowercase email addresses to keep identity matching deterministic.
+        normalized = (value or "").strip().lower()
+        if not normalized:
+            raise ValueError("email is required")
+        return normalized
+
+    @validator("first_name", "last_name", pre=True)
+    def normalize_optional_name(cls, value: Optional[str]) -> Optional[str]:
+        # Collapse blank strings to null so templates and BigQuery rows do not store noisy whitespace.
+        normalized = (value or "").strip()
+        return normalized or None
+
+    @validator("role_group", pre=True)
+    def normalize_role_group(cls, value: str) -> str:
+        # Restrict role groups to the supported named profiles requested for the new admin workflow.
+        normalized = (value or "").strip().lower()
+        if normalized not in {"sku_codes", "formulations", "materials", "admin"}:
+            raise ValueError("role_group must be one of sku_codes, formulations, materials, admin")
+        return normalized
+
+
 class IngredientCreate(BaseModel):
     category_code: int
     trade_name_inci: str

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.pellet_bags_api import (
     DEFAULT_ASSIGNEE_EMAILS,
@@ -11,6 +11,7 @@ from app.api.pellet_bags_api import (
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, PelletBagStatusListUpdate
 from app.services.bigquery_service import BigQueryService
+from app.services.permission_service import require_permission
 
 # Keep the status-list specific API separate from the broader pellet_bags CRUD surface.
 router = APIRouter(prefix="/api/pellet-bags", tags=["pellet_bag_status"])
@@ -19,10 +20,12 @@ router = APIRouter(prefix="/api/pellet-bags", tags=["pellet_bag_status"])
 @router.patch("/status", response_model=ApiResponse)
 def update_pellet_bag_status_list_row(
     payload: PelletBagStatusListUpdate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Validate user-supplied status-column names against an explicit whitelist to prevent arbitrary SQL updates.
+    require_permission(request, "status_lists.edit")
     if payload.status_column not in STATUS_LIST_COLUMN_WHITELIST:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status_column")
 

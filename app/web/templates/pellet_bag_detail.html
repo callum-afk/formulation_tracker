@@ -38,7 +38,7 @@
 </section>
 <section class="panel">
   <h2>Formulation Table</h2>
-  <div id="pellet-detail-formulations"></div>
+  <div id="pellet-detail-formulations" data-show-dry-weights="{{ 'true' if show_dry_weights else 'false' }}"></div>
   <script id="pellet-detail-formulations-data" type="application/json">{{ detail.formulations | tojson }}</script>
 </section>
 {% endblock %}

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_actor, get_bigquery, get_settings
 from app.models import ApiResponse, BatchVariantCreate
 from app.services.bigquery_service import BigQueryService
 from app.services.codegen_service import int_to_code
 from app.services.hashing_service import hash_batches
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/batch_variants", tags=["batch_variants"])
 
@@ -14,10 +15,13 @@ router = APIRouter(prefix="/api/batch_variants", tags=["batch_variants"])
 @router.post("", response_model=ApiResponse)
 def create_batch_variant(
     payload: BatchVariantCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
     settings=Depends(get_settings),
 ) -> ApiResponse:
+    # Restrict batch-variant creation to users who may edit batch-selection data.
+    require_permission(request, "batch_selection.edit")
     weight_variant = bigquery.get_weight(payload.set_code, payload.weight_code)
     if not weight_variant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Weight variant not found")
@@ -67,8 +71,10 @@ def create_batch_variant(
 def list_batch_variants(
     set_code: str,
     weight_code: str,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> ApiResponse:
     # Normalize lookup codes so lowercase user entry still resolves matching batch variants.
+    require_permission(request, "batch_selection.view")
     rows = bigquery.list_batch_variants(set_code.strip().upper(), weight_code.strip().upper())
     return ApiResponse(ok=True, data={"items": rows})

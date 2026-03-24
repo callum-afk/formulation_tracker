@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, PelletBagCreate, PelletBagUpdate
 from app.services.bigquery_service import BigQueryService
+from app.services.permission_service import require_permission
 
 router = APIRouter(prefix="/api/pellet_bags", tags=["pellet_bags"])
 
@@ -134,8 +135,9 @@ def _validate_optional_payload(payload: dict, *, update: bool = False) -> dict:
 
 
 @router.get("/meta", response_model=ApiResponse)
-def get_pellet_bag_meta(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def get_pellet_bag_meta(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Serve all dropdown options from one endpoint for predictable page bootstrap.
+    require_permission(request, "pellet_bags.view")
     return ApiResponse(
         ok=True,
         data={
@@ -152,18 +154,21 @@ def get_pellet_bag_meta(bigquery: BigQueryService = Depends(get_bigquery)) -> Ap
 
 
 @router.get("", response_model=ApiResponse)
-def list_pellet_bags(bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_pellet_bags(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
     # Return all pellet bag rows for the management table.
+    require_permission(request, "pellet_bags.view")
     return ApiResponse(ok=True, data={"items": bigquery.list_pellet_bags()})
 
 
 @router.post("", response_model=ApiResponse)
 def create_pellet_bags(
     payload: PelletBagCreate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Reject unknown compounding codes so pellet bags can only reference existing processing entries.
+    require_permission(request, "pellet_bags.edit")
     if payload.compounding_how_code not in bigquery.list_compounding_how_codes():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid compounding_how_code")
 
@@ -184,10 +189,12 @@ def create_pellet_bags(
 def update_pellet_bag(
     pellet_bag_id: str,
     payload: PelletBagUpdate,
+    request: Request,
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
     # Apply updates only to editable fields and stamp updater metadata server-side.
+    require_permission(request, "pellet_bags.edit")
     validated_optional = _validate_optional_payload(payload.dict(exclude_unset=True), update=True)
     updated = bigquery.update_pellet_bag(
         pellet_bag_id=pellet_bag_id,
