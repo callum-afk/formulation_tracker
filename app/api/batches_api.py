@@ -64,6 +64,9 @@ def create_batch(
             "is_active": True,
             "spec_object_path": None,
             "spec_uploaded_at": None,
+            "archived": False,
+            "archived_at": None,
+            "archived_by": None,
         }
     )
     return ApiResponse(ok=True, data={"batch": payload.dict(), "owner": actor.email if actor else None})
@@ -74,6 +77,7 @@ def list_batches(
     request: Request,
     sku: str | None = None,
     batch_code: str | None = None,
+    include_archived: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     bigquery: BigQueryService = Depends(get_bigquery),
@@ -84,10 +88,33 @@ def list_batches(
     rows, total = bigquery.list_batches_paginated(
         sku=sku.strip() if sku else None,
         batch_code=batch_code.strip() if batch_code else None,
+        include_archived=include_archived,
         page=page,
         page_size=page_size,
     )
     return ApiResponse(ok=True, data={"items": rows, "total": total, "page": page, "page_size": page_size})
+
+
+@router.patch("/{sku}/{batch_code}/archive", response_model=ApiResponse)
+def archive_batch(
+    sku: str,
+    batch_code: str,
+    payload: dict,
+    request: Request,
+    bigquery: BigQueryService = Depends(get_bigquery),
+    actor=Depends(get_actor),
+) -> ApiResponse:
+    # Restrict archive state changes to admins because this controls what appears in active formulation flows.
+    access = require_permission(request, "batches.edit")
+    if not access.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can archive batches")
+    batch = bigquery.get_batch(sku, batch_code)
+    if not batch:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    archived = bool(payload.get("archived", True))
+    bigquery.set_batch_archived(sku, batch_code, archived, actor.email if actor else None)
+    updated = bigquery.get_batch(sku, batch_code)
+    return ApiResponse(ok=True, data={"batch": updated})
 
 
 @router.get("/{sku}/{batch_code}", response_model=ApiResponse)
@@ -165,7 +192,7 @@ def spec_upload_url(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PDF only")
     if payload.content_length > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File too large")
-    batches = bigquery.list_batches(sku)
+    batches = bigquery.list_batches(sku, include_archived=True)
     if not any(batch["ingredient_batch_code"] == batch_code for batch in batches):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
@@ -207,7 +234,7 @@ def spec_download_url(
 ) -> ApiResponse:
     # Restrict spec downloads to users with batch view rights.
     require_permission(request, "batches.view")
-    batches = bigquery.list_batches(sku)
+    batches = bigquery.list_batches(sku, include_archived=True)
     match = next((batch for batch in batches if batch["ingredient_batch_code"] == batch_code), None)
     if not match or not match.get("spec_object_path"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Spec not found")

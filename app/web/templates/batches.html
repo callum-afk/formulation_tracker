@@ -2,7 +2,7 @@
 {% block content %}
 <section class="panel">
   <h2>Create ingredient batch</h2>
-  <form id="batch-form">
+  <form id="batch-form" data-is-admin="{{ '1' if request.state.user_access.is_admin else '0' }}">
     <div class="grid">
       <label>SKU <input name="sku" list="sku-list" required /></label>
       <label>Batch code <input name="ingredient_batch_code" required /></label>
@@ -39,11 +39,15 @@
         <th>Notes</th>
         <th>Quantity</th>
         <th>Owner</th>
+        <th>Status</th>
         <th>CoA</th>
+        {% if request.state.user_access.is_admin %}
+        <th>Actions</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody id="batch-results">
-      <tr><td colspan="7">No batches loaded.</td></tr>
+      <tr><td colspan="{{ 9 if request.state.user_access.is_admin else 8 }}">No batches loaded.</td></tr>
     </tbody>
   </table>
   <div class="inline-actions" id="batches-pagination">

@@ -115,7 +115,7 @@ class BigQueryService:
                 "sku", "category_code", "seq", "pack_size_value", "pack_size_unit", "trade_name_inci", "supplier", "spec_grade", "format", "created_at", "updated_at", "created_by", "updated_by", "is_active", "msds_object_path", "msds_filename", "msds_content_type", "msds_uploaded_at",
             },
             "ingredient_batches": {
-                "sku", "ingredient_batch_code", "received_at", "notes", "quantity_value", "quantity_unit", "created_at", "updated_at", "created_by", "updated_by", "is_active", "spec_object_path", "spec_uploaded_at",
+                "sku", "ingredient_batch_code", "received_at", "notes", "quantity_value", "quantity_unit", "created_at", "updated_at", "created_by", "updated_by", "is_active", "spec_object_path", "spec_uploaded_at", "archived", "archived_at", "archived_by",
             },
             "location_partners": {"partner_code", "partner_name", "machine_specification", "created_at", "created_by"},
             "location_codes": {"set_code", "weight_code", "batch_variant_code", "partner_code", "production_date", "location_id", "created_at", "created_by"},
@@ -484,9 +484,9 @@ class BigQueryService:
         query = (
             f"INSERT `{self.dataset}.ingredient_batches` "
             "(sku, ingredient_batch_code, received_at, notes, quantity_value, quantity_unit, created_at, updated_at, created_by, updated_by, "
-            "is_active, spec_object_path, spec_uploaded_at) "
+            "is_active, spec_object_path, spec_uploaded_at, archived, archived_at, archived_by) "
             "VALUES (@sku, @ingredient_batch_code, @received_at, @notes, @quantity_value, @quantity_unit, @created_at, @updated_at, "
-            "@created_by, @updated_by, @is_active, @spec_object_path, @spec_uploaded_at)"
+            "@created_by, @updated_by, @is_active, @spec_object_path, @spec_uploaded_at, @archived, @archived_at, @archived_by)"
         )
         params = [
             bigquery.ScalarQueryParameter("sku", "STRING", batch["sku"]),
@@ -502,22 +502,32 @@ class BigQueryService:
             bigquery.ScalarQueryParameter("is_active", "BOOL", batch["is_active"]),
             bigquery.ScalarQueryParameter("spec_object_path", "STRING", batch.get("spec_object_path")),
             bigquery.ScalarQueryParameter("spec_uploaded_at", "TIMESTAMP", batch.get("spec_uploaded_at")),
+            bigquery.ScalarQueryParameter("archived", "BOOL", batch.get("archived", False)),
+            bigquery.ScalarQueryParameter("archived_at", "TIMESTAMP", batch.get("archived_at")),
+            bigquery.ScalarQueryParameter("archived_by", "STRING", batch.get("archived_by")),
         ]
         self._run(query, params).result()
 
-    def list_batches(self, sku: str) -> List[Dict[str, Any]]:
+    def list_batches(self, sku: str, include_archived: bool = False) -> List[Dict[str, Any]]:
         # Keep the legacy SKU-specific listing helper for endpoints that need exact SKU scope.
         query = (
             f"SELECT * FROM `{self.dataset}.ingredient_batches` "
-            "WHERE sku = @sku ORDER BY ingredient_batch_code"
+            "WHERE sku = @sku AND (@include_archived OR COALESCE(archived, FALSE) = FALSE) ORDER BY ingredient_batch_code"
         )
-        rows = self._run(query, [bigquery.ScalarQueryParameter("sku", "STRING", sku)]).result()
+        rows = self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("sku", "STRING", sku),
+                bigquery.ScalarQueryParameter("include_archived", "BOOL", include_archived),
+            ],
+        ).result()
         return [dict(row) for row in rows]
 
     def list_batches_paginated(
         self,
         sku: Optional[str],
         batch_code: Optional[str],
+        include_archived: bool,
         page: int,
         page_size: int,
     ) -> Tuple[List[Dict[str, Any]], int]:
@@ -530,6 +540,9 @@ class BigQueryService:
         if batch_code:
             where.append("ingredient_batch_code = @batch_code")
             params.append(bigquery.ScalarQueryParameter("batch_code", "STRING", batch_code))
+        if not include_archived:
+            # Exclude archived rows from default selection/list APIs so new formulation workflows see only live batches.
+            where.append("COALESCE(archived, FALSE) = FALSE")
 
         # Assemble the WHERE clause only when one or more optional filters are provided.
         where_clause = f"WHERE {' AND '.join(where)}" if where else ""
@@ -570,6 +583,27 @@ class BigQueryService:
         for row in rows:
             return dict(row)
         return None
+
+    def set_batch_archived(self, sku: str, batch_code: str, archived: bool, actor_email: Optional[str]) -> None:
+        # Persist archive state and audit metadata so admins can hide old batches without deleting history.
+        query = (
+            f"UPDATE `{self.dataset}.ingredient_batches` "
+            "SET archived = @archived, "
+            "archived_at = IF(@archived, CURRENT_TIMESTAMP(), NULL), "
+            "archived_by = IF(@archived, @actor_email, NULL), "
+            "updated_at = CURRENT_TIMESTAMP(), "
+            "updated_by = @actor_email "
+            "WHERE sku = @sku AND ingredient_batch_code = @batch_code"
+        )
+        self._run(
+            query,
+            [
+                bigquery.ScalarQueryParameter("archived", "BOOL", archived),
+                bigquery.ScalarQueryParameter("actor_email", "STRING", actor_email),
+                bigquery.ScalarQueryParameter("sku", "STRING", sku),
+                bigquery.ScalarQueryParameter("batch_code", "STRING", batch_code),
+            ],
+        ).result()
 
     def update_spec(self, sku: str, batch_code: str, object_path: str) -> None:
         query = (
@@ -704,6 +738,29 @@ class BigQueryService:
         for row in rows:
             return dict(row)
         return None
+
+    def get_set_dependency_counts(self, set_code: str) -> Dict[str, int]:
+        # Collect downstream reference counts so delete flows can block when formulation data already exists.
+        query = (
+            "SELECT 'dry_weight_variants' AS source, COUNT(1) AS total "
+            f"FROM `{self.dataset}.dry_weight_variants` WHERE set_code = @set_code "
+            "UNION ALL "
+            "SELECT 'batch_variants' AS source, COUNT(1) AS total "
+            f"FROM `{self.dataset}.batch_variants` WHERE set_code = @set_code "
+            "UNION ALL "
+            "SELECT 'location_codes' AS source, COUNT(1) AS total "
+            f"FROM `{self.dataset}.location_codes` WHERE set_code = @set_code"
+        )
+        rows = self._run(query, [bigquery.ScalarQueryParameter("set_code", "STRING", set_code)]).result()
+        return {str(row["source"]): int(row["total"] or 0) for row in rows}
+
+    def delete_set(self, set_code: str) -> None:
+        # Delete child rows first, then parent row, to keep set records consistent in BigQuery.
+        delete_items_query = f"DELETE FROM `{self.dataset}.ingredient_set_items` WHERE set_code = @set_code"
+        delete_set_query = f"DELETE FROM `{self.dataset}.ingredient_sets` WHERE set_code = @set_code"
+        params = [bigquery.ScalarQueryParameter("set_code", "STRING", set_code)]
+        self._run(delete_items_query, params).result()
+        self._run(delete_set_query, params).result()
 
     def get_weight_by_hash(self, set_code: str, weight_hash: str) -> Optional[str]:
         query = (

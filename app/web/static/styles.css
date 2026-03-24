@@ -857,3 +857,45 @@ code {
   background: color-mix(in srgb, #fff2f2 70%, var(--color-paper-100));
   color: var(--color-danger);
 }
+
+/* Dim submit scopes while requests are in flight so users get immediate feedback and avoid duplicate submissions. */
+.is-submit-pending {
+  opacity: 0.65;
+  transition: opacity 0.2s ease;
+}
+
+/* Global pending overlay keeps all submit workflows visually consistent across pages and inline editors. */
+.submit-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(33, 35, 35, 0.2);
+  backdrop-filter: blur(1px);
+  z-index: 1200;
+}
+
+/* Overlay content card follows panel styling so loading feedback fits the existing app look-and-feel. */
+.submit-overlay-card {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 260px;
+  max-width: 460px;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, white 70%, var(--color-paper-100));
+  box-shadow: var(--shadow-panel);
+}
+
+/* Status badge styling keeps live/archived batch visibility obvious in the ingredient-batches table. */
+.status-live {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+/* Archived rows are intentionally muted to signal they are not selectable in formulation creation flows. */
+.status-archived {
+  color: var(--color-ink-500);
+  font-weight: 600;
+}

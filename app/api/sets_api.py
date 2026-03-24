@@ -101,8 +101,10 @@ def update_set(
     bigquery: BigQueryService = Depends(get_bigquery),
     actor=Depends(get_actor),
 ) -> ApiResponse:
-    # Enforce set edit access before metadata updates are written.
-    require_permission(request, "sets.edit")
+    # Restrict metadata edits to admins so non-admin users keep read-only set visibility.
+    access = require_permission(request, "sets.edit")
+    if not access.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can edit sets")
     # Require an existing formulation set before applying metadata updates from the detail editor.
     row = bigquery.get_set(set_code)
     if not row:
@@ -112,3 +114,28 @@ def update_set(
     bigquery.update_set(set_code, payload.notes, payload.material_workstream, actor.email if actor else None)
     updated = bigquery.get_set(set_code)
     return ApiResponse(ok=True, data=updated)
+
+
+@router.delete("/{set_code}", response_model=ApiResponse)
+def delete_set(
+    set_code: str,
+    request: Request,
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> ApiResponse:
+    # Restrict set deletion to admins and block deletes when downstream variants still depend on the set.
+    access = require_permission(request, "sets.edit")
+    if not access.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can delete sets")
+    row = bigquery.get_set(set_code)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Set not found")
+    dependency_counts = bigquery.get_set_dependency_counts(set_code)
+    blocking_dependencies = {name: count for name, count in dependency_counts.items() if count > 0}
+    if blocking_dependencies:
+        reason = ", ".join(f"{name}={count}" for name, count in blocking_dependencies.items())
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Set cannot be deleted because it is referenced by: {reason}",
+        )
+    bigquery.delete_set(set_code)
+    return ApiResponse(ok=True, data={"set_code": set_code, "deleted": True})

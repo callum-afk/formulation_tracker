@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.ingredient_batches` (
   updated_by STRING,
   is_active BOOL NOT NULL,
   spec_object_path STRING,
-  spec_uploaded_at TIMESTAMP
+  spec_uploaded_at TIMESTAMP,
+  archived BOOL NOT NULL,
+  archived_at TIMESTAMP,
+  archived_by STRING
 );
 
 CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.ingredient_sets` (
