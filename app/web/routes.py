@@ -686,7 +686,8 @@ async def user_roles_page(request: Request, bigquery: BigQueryService = Depends(
         {
             "request": request,
             "title": "User Roles",
-            "role_options": ["sku_codes", "formulations", "materials", "admin"],
+            # Expose only the supported persisted role-group keys in the admin dropdown model.
+            "role_options": ["sku_codes", "formulations", "formulations_mix", "admin"],
             "rows": rows,
         },
     )

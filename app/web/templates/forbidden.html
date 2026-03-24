@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Show a clear forbidden-state message when a signed-in user lacks route permissions. -->
+  <h2>Aw snap...</h2>
+  <!-- Keep the copy explicit so users know this is an authorization issue, not a generic crash. -->
+  <p>You don't have permission for this page / view.</p>
+  <!-- Provide the requested support contact so users can report potential role misconfiguration. -->
+  <p>Contact <a href="mailto:callum@notpla.com">callum@notpla.com</a> if you think this is incorrect.</p>
+</section>
+{% endblock %}
