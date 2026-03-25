@@ -3045,14 +3045,6 @@ function attachNativeSubmitPendingState() {
       }
       // Persist native active flag so rapid double-clicks are blocked deterministically.
       form.dataset.nativePendingActive = '1';
-      // Re-check defaultPrevented after all submit listeners finish so late preventDefault() calls cannot leave stale overlay state.
-      queueMicrotask(() => {
-        // If another listener canceled submission after this handler ran, clear native pending state immediately.
-        if (event.defaultPrevented) {
-          lifecycle.done();
-          delete form.dataset.nativePendingActive;
-        }
-      });
     });
   });
 }
