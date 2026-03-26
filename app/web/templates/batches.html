@@ -25,7 +25,8 @@
 
 <section class="panel">
   <h2>Lookup ingredient batches</h2>
-  <form id="batch-lookup-form" class="inline-actions">
+  <!-- Mirror admin capability onto the lookup form so front-end actions (archive/unarchive) render for admins. -->
+  <form id="batch-lookup-form" class="inline-actions" data-is-admin="{{ '1' if request.state.user_access.is_admin else '0' }}">
     <label>SKU <input name="sku" list="sku-list" /></label>
     <label>Batch code <input name="batch_code" placeholder="e.g. AB" /></label>
     <button type="submit">Load</button>
