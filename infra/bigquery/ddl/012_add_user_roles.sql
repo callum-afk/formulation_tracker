@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS `PROJECT_ID.DATASET_ID.user_roles` (
   first_name STRING,
   last_name STRING,
   role_group STRING NOT NULL,
-  permissions ARRAY<STRING> NOT NULL,
+  permissions ARRAY<STRING>,
   is_active BOOL NOT NULL,
   created_at TIMESTAMP NOT NULL,
   created_by STRING,

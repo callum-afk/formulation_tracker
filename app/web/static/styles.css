@@ -899,3 +899,7 @@ code {
   color: var(--color-ink-500);
   font-weight: 600;
 }
+
+.submit-overlay[hidden] {
+  display: none !important;
+}
