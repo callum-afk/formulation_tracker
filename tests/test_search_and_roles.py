@@ -108,6 +108,50 @@ class UserRolesSubmitTests(unittest.TestCase):
         self.assertEqual(kwargs["email"], "qa@example.com")
         self.assertEqual(kwargs["role_group"], "formulations_mix")
 
+    def test_user_role_update_accepts_form_payload_from_inline_row(self) -> None:
+        # Regress native form submit payload bug by asserting posted inline values persist through the route.
+        bigquery = MagicMock()
+        bigquery.list_user_roles.return_value = []
+        client = self._build_client(bigquery)
+
+        response = client.post(
+            "/admin/user-roles",
+            data={
+                "email": "qa-inline@example.com",
+                "first_name": "Inline",
+                "last_name": "User",
+                "role_group": "mixing_1",
+                "is_active": "true",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 303)
+        bigquery.create_or_update_user_role.assert_called_once()
+        _, kwargs = bigquery.create_or_update_user_role.call_args
+        self.assertEqual(kwargs["email"], "qa-inline@example.com")
+        self.assertEqual(kwargs["role_group"], "mixing_1")
+
+    def test_user_role_update_returns_validation_error_instead_of_500(self) -> None:
+        # Ensure missing required fields return a user-friendly validation response instead of raising a 500.
+        bigquery = MagicMock()
+        bigquery.list_user_roles.return_value = []
+        client = self._build_client(bigquery)
+
+        response = client.post(
+            "/admin/user-roles",
+            data={
+                "email": "",
+                "role_group": "",
+            },
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("email is required", response.text.lower())
+        self.assertIn("role_group must be one of", response.text)
+        bigquery.create_or_update_user_role.assert_not_called()
+
     def test_batch_selection_detail_route_renders_when_record_exists(self) -> None:
         # Validate that the new batch-selection detail route resolves and renders linked payload data.
         bigquery = MagicMock()

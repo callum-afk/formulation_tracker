@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
 from app.dependencies import get_bigquery, get_settings, get_storage
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
@@ -18,6 +19,9 @@ from app.services.storage_service import StorageService
 router = APIRouter()
 
 templates = Jinja2Templates(directory="app/web/templates")
+
+# Keep role options centralized so GET and POST render paths always show the same valid choices.
+USER_ROLE_OPTIONS = ["sku_codes", "formulations", "formulations_mix", "mixing_1", "admin"]
 
 
 def _format_created_at_display(value) -> str:
@@ -713,9 +717,8 @@ async def user_roles_page(request: Request, bigquery: BigQueryService = Depends(
         {
             "request": request,
             "title": "User Roles",
-            # Expose supported role-group keys in the intended admin-order:
-            # formulations stays distinct, then formulations + mix 1.
-            "role_options": ["sku_codes", "formulations", "formulations_mix", "mixing_1", "admin"],
+            # Expose supported role-group keys in the intended admin-order.
+            "role_options": USER_ROLE_OPTIONS,
             "rows": rows,
         },
     )
@@ -733,25 +736,61 @@ async def user_roles_submit(
 ) -> HTMLResponse:
     # Restrict role edits to admins only and then persist the submitted role assignment.
     require_permission(request, "admin.user_roles.edit")
+    # Re-render helper keeps validation failures user-friendly instead of surfacing an internal server error.
+    async def _render_with_error(error_message: str, status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY) -> HTMLResponse:
+        # Reload rows so admins still see current assignments while fixing invalid form input.
+        rows = bigquery.list_user_roles()
+        return templates.TemplateResponse(
+            "user_roles.html",
+            {
+                "request": request,
+                "title": "User Roles",
+                # Reuse one shared options list so role dropdowns remain consistent after validation failures.
+                "role_options": USER_ROLE_OPTIONS,
+                "rows": rows,
+                # Surface schema validation feedback directly in the page.
+                "error_message": error_message,
+            },
+            status_code=status_code,
+        )
     # Accept both JSON and standard form submissions so role edits remain robust across UI submission modes.
     if not email or not role_group:
         content_type = (request.headers.get("content-type") or "").lower()
         if "application/json" in content_type:
             payload = await request.json()
-            parsed = UserRoleUpsert(**payload)
+            try:
+                # Validate/normalize JSON submissions before mapping them onto shared local variables.
+                parsed = UserRoleUpsert(**payload)
+            except ValidationError as exc:
+                # Return a user-friendly validation response instead of a generic 500.
+                return await _render_with_error("; ".join(error.get("msg", "Invalid value") for error in exc.errors()))
             email = parsed.email
             first_name = parsed.first_name or ""
             last_name = parsed.last_name or ""
             role_group = parsed.role_group
             is_active = "true" if parsed.is_active else "false"
+        elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+            # Re-read raw form data as a defensive fallback for cases where injected Form() args arrive empty.
+            form = await request.form()
+            # Prefer explicit form keys and normalize whitespace before schema validation.
+            email = (form.get("email") or "").strip()
+            first_name = (form.get("first_name") or "").strip()
+            last_name = (form.get("last_name") or "").strip()
+            role_group = (form.get("role_group") or "").strip()
+            is_active = (form.get("is_active") or "true").strip().lower()
     # Re-validate normalized values through the shared model so form and JSON submissions follow one contract.
-    parsed_payload = UserRoleUpsert(
-        email=email,
-        first_name=first_name,
-        last_name=last_name,
-        role_group=role_group,
-        is_active=is_active.strip().lower() == "true",
-    )
+    try:
+        # Validate form payload and normalize values before writing into BigQuery.
+        parsed_payload = UserRoleUpsert(
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            role_group=role_group,
+            is_active=is_active.strip().lower() == "true",
+        )
+    except ValidationError as exc:
+        # Preserve admin UX by returning 422 + inline message when required fields are missing/invalid.
+        return await _render_with_error("; ".join(error.get("msg", "Invalid value") for error in exc.errors()))
     bigquery.create_or_update_user_role(
         email=parsed_payload.email,
         first_name=parsed_payload.first_name,
