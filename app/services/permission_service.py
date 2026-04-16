@@ -63,30 +63,16 @@ FORMULATIONS_PERMISSIONS = {
     "status_lists.view",
     "utilities.view",
 }
-# Capture the Formulations + Mix role permissions as one explicit reusable set.
-FORMULATIONS_MIX_PERMISSIONS = {
-    "batch_selection.edit",
-    "batch_selection.view",
-    "batches.edit",
-    "batches.view",
-    "compounding_how.edit",
-    "compounding_how.view",
-    "conversion1.edit",
-    "conversion1.view",
-    "dashboard.view",
-    "dry_weights.edit",
-    "dry_weights.view",
-    "ingredients.edit",
-    "ingredients.view",
+# Capture the Formulations + Mix 1 role permissions as:
+# 1) every Formulations permission, plus
+# 2) the three Mixing 1 workflow pages requested by the user.
+FORMULATIONS_MIX_PERMISSIONS = FORMULATIONS_PERMISSIONS | {
     "location_codes.edit",
     "location_codes.view",
+    "compounding_how.edit",
+    "compounding_how.view",
     "pellet_bags.edit",
     "pellet_bags.view",
-    "sets.edit",
-    "sets.view",
-    "status_lists.edit",
-    "status_lists.view",
-    "utilities.view",
 }
 # Capture the Mixing 1 role permissions as Formulations + the three dedicated mixing pages.
 MIXING_1_PERMISSIONS = {
