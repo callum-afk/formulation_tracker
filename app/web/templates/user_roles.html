@@ -14,8 +14,8 @@
   {% if error_message %}
   <p class="form-errors">{{ error_message }}</p>
   {% endif %}
-  <!-- Keep this as a plain HTML form submit so browser-native payload serialization stays untouched. -->
-  <form method="post" action="/admin/user-roles" class="form-stack">
+  <!-- Explicit native-submit marker keeps navigation submit lifecycle separate from JS-managed async forms. -->
+  <form method="post" action="/admin/user-roles" class="form-stack" data-native-submit="true">
     <!-- Capture the authenticated identity key used by permission resolution. -->
     <label>Email <input type="email" name="email" required /></label>
     <!-- Capture first name separately so admins can maintain readable user records. -->
