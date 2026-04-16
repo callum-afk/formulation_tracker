@@ -169,7 +169,8 @@ def create_pellet_bags(
 ) -> ApiResponse:
     # Reject unknown compounding codes so pellet bags can only reference existing processing entries.
     require_permission(request, "pellet_bags.edit")
-    if payload.compounding_how_code not in bigquery.list_compounding_how_codes():
+    # Validate against a targeted existence query so create latency does not scale with table size.
+    if not bigquery.compounding_how_exists(payload.compounding_how_code):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid compounding_how_code")
 
     # Validate and normalize optional fields before persisting.

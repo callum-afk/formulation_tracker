@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import time
+from typing import Optional
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -21,6 +24,7 @@ from app.api.pellet_bags_api import router as pellet_bags_router
 from app.api.pellet_bag_status_api import router as pellet_bag_status_router
 from app.api.conversion1_products_api import router as conversion1_products_router
 from app.web.routes import router as web_router
+from app.services.metrics import bq_query_count_var, bq_time_ms_var, request_id_var, reset_request_metrics
 from app.services.permission_service import ResolvedUserAccess, build_sidebar_groups, resolve_permissions_for_role
 
 LOGGER = logging.getLogger(__name__)
@@ -28,6 +32,12 @@ LOGGER = logging.getLogger(__name__)
 
 app = FastAPI(title="Formulation Tracker")
 templates = Jinja2Templates(directory="app/web/templates")
+# Keep one in-memory role cache to reduce repeated per-request BigQuery lookups for active sessions.
+_ROLE_CACHE_TTL_SECONDS = 30.0
+# Store cached role rows keyed by lowercase email with expiration timestamps.
+_role_cache: dict[str, tuple[float, Optional[dict]]] = {}
+# Cache active-role count briefly to avoid repeated full-count queries on every request.
+_active_role_count_cache: tuple[float, int] = (0.0, 0)
 
 
 @app.on_event("startup")
@@ -50,8 +60,18 @@ def startup() -> None:
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    # Stamp each request with a correlation id used across API and BigQuery timing logs.
+    request_id = uuid4().hex[:12]
+    request.state.request_id = request_id
+    request_id_var.set(request_id)
+    # Reset per-request timing counters before any endpoint or auth query executes.
+    reset_request_metrics()
+    # Capture high-level request start time for full API duration reporting.
+    request_started_at = time.perf_counter()
     if request.url.path in {"/health", "/static/app.js", "/static/styles.css"}:
-        return await call_next(request)
+        # Skip auth and metric-rich logging for static assets and health probes.
+        response = await call_next(request)
+        return response
 
     try:
         # Parse auth context once in middleware so downstream routes and templates can reuse user metadata.
@@ -60,9 +80,9 @@ async def auth_middleware(request: Request, call_next):
         request.state.actor = auth_context.email
         request.state.user_email = auth_context.email
         # Load the persisted user-role row so every downstream page and API can enforce the same permissions.
-        role_record = request.app.state.bigquery.get_user_role(auth_context.email)
+        role_record = _get_cached_role(request, auth_context.email)
         # Detect bootstrap mode so the first signed-in user can access the admin page and seed roles.
-        is_bootstrap_admin = role_record is None and request.app.state.bigquery.count_active_user_roles() == 0
+        is_bootstrap_admin = role_record is None and _get_cached_active_role_count(request) == 0
         # Promote only the bootstrap user to admin; otherwise preserve the explicit persisted role-group.
         role_group = "admin" if is_bootstrap_admin else (role_record or {}).get("role_group", "")
         # Resolve the role-group into the concrete named permission list used by route guards and filtering.
@@ -89,8 +109,64 @@ async def auth_middleware(request: Request, call_next):
         )
         request.state.sidebar_groups = []
         return JSONResponse(status_code=401, content={"ok": False, "error": str(exc)})
+    # Execute downstream request handling only after auth context has been resolved.
+    response = await call_next(request)
+    # Compute total end-to-end API time to compare against aggregated BigQuery query time.
+    total_api_ms = (time.perf_counter() - request_started_at) * 1000.0
+    # Read request payload size from Content-Length header when provided by clients.
+    request_bytes = int(request.headers.get("content-length", "0") or 0)
+    # Read response payload size from Content-Length header when present on response objects.
+    response_bytes = int(response.headers.get("content-length", "0") or 0)
+    # Retrieve accumulated BigQuery timing captured by instrumented query jobs.
+    total_bq_ms = bq_time_ms_var.get()
+    query_count = bq_query_count_var.get()
+    # Emit one structured request log line for rapid bottleneck attribution by layer.
+    LOGGER.info(
+        "api.request request_id=%s method=%s path=%s status=%s total_ms=%.2f bq_ms=%.2f bq_query_count=%s request_bytes=%s response_bytes=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        total_api_ms,
+        total_bq_ms,
+        query_count,
+        request_bytes,
+        response_bytes,
+    )
+    # Attach timing headers so browser devtools can isolate API and BigQuery contributions per request.
+    response.headers["X-Request-Id"] = request_id
+    response.headers["X-Api-Time-Ms"] = f"{total_api_ms:.2f}"
+    response.headers["X-Bq-Time-Ms"] = f"{total_bq_ms:.2f}"
+    response.headers["X-Bq-Query-Count"] = str(query_count)
+    return response
 
-    return await call_next(request)
+
+def _get_cached_role(request: Request, email: str) -> Optional[dict]:
+    # Reuse recent role lookups to remove one BigQuery query from most authenticated requests.
+    cache_key = (email or "").strip().lower()
+    now = time.monotonic()
+    cached = _role_cache.get(cache_key)
+    # Return cached role rows while the short TTL remains valid.
+    if cached and cached[0] > now:
+        return cached[1]
+    # Refresh role data from BigQuery when cache is missing or expired.
+    role_record = request.app.state.bigquery.get_user_role(email)
+    _role_cache[cache_key] = (now + _ROLE_CACHE_TTL_SECONDS, role_record)
+    return role_record
+
+
+def _get_cached_active_role_count(request: Request) -> int:
+    # Cache active-role totals briefly because bootstrap checks run on every authenticated request.
+    now = time.monotonic()
+    global _active_role_count_cache
+    expires_at, cached_count = _active_role_count_cache
+    # Return cached count while still fresh to avoid repeated COUNT queries.
+    if expires_at > now:
+        return cached_count
+    # Refresh the active role count from BigQuery once cache expires.
+    latest_count = request.app.state.bigquery.count_active_user_roles()
+    _active_role_count_cache = (now + _ROLE_CACHE_TTL_SECONDS, latest_count)
+    return latest_count
 
 
 @app.get("/health")

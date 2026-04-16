@@ -28,11 +28,10 @@ def create_batch_variant(
     weight_skus = {item.get("sku") for item in (weight_variant.get("items") or [])}
 
     items = [(item.sku, item.ingredient_batch_code) for item in payload.items]
-    missing_batches = [
-        f"{sku}:{batch_code}"
-        for sku, batch_code in items
-        if not bigquery.get_batch(sku, batch_code)
-    ]
+    # Resolve all requested SKU+batch keys in one BigQuery query to eliminate N+1 validation overhead.
+    existing_pairs = bigquery.list_existing_batches(items)
+    # Preserve original error payload format while using the bulk lookup result set.
+    missing_batches = [f"{sku}:{batch_code}" for sku, batch_code in items if (sku, batch_code) not in existing_pairs]
     if missing_batches:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
