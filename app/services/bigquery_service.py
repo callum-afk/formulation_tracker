@@ -1534,13 +1534,24 @@ class BigQueryService:
             created_items.append({"product_code": product_code, "conversion1_how_code": how_code, "product_suffix": suffix})
         return created_items
 
-    def list_conversion1_products(self, search: Optional[str], page: int, page_size: int) -> Tuple[List[Dict[str, Any]], int]:
-        # Return active product rows newest-first with optional product-code substring filtering.
+    def list_conversion1_products(
+        self,
+        mixing_how: Optional[str],
+        mixed_product: Optional[str],
+        page: int,
+        page_size: int,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        # Return active product rows newest-first with optional source-how and product-code substring filters.
         where: List[str] = ["is_active = TRUE"]
         params: List[bigquery.ScalarQueryParameter] = []
-        if search:
-            where.append("CONTAINS_SUBSTR(product_code, @search)")
-            params.append(bigquery.ScalarQueryParameter("search", "STRING", search))
+        if mixing_how:
+            # Apply Mixing How filter against conversion1_how_code values shown in the created-products table.
+            where.append("CONTAINS_SUBSTR(conversion1_how_code, @mixing_how)")
+            params.append(bigquery.ScalarQueryParameter("mixing_how", "STRING", mixing_how))
+        if mixed_product:
+            # Apply mixed-product filter against generated product_code values.
+            where.append("CONTAINS_SUBSTR(product_code, @mixed_product)")
+            params.append(bigquery.ScalarQueryParameter("mixed_product", "STRING", mixed_product))
         where_clause = "WHERE " + " AND ".join(where)
 
         count_rows = list(self._run(f"SELECT COUNT(1) AS total FROM `{self.dataset}.conversion1_products` {where_clause}", params).result())
