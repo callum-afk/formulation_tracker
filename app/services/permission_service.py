@@ -88,6 +88,29 @@ FORMULATIONS_MIX_PERMISSIONS = {
     "status_lists.view",
     "utilities.view",
 }
+# Capture the Mixing 1 role permissions as Formulations + the three dedicated mixing pages.
+MIXING_1_PERMISSIONS = {
+    "batch_selection.edit",
+    "batch_selection.view",
+    "batches.edit",
+    "batches.view",
+    "compounding_how.edit",
+    "compounding_how.view",
+    "dashboard.view",
+    "dry_weights.edit",
+    "dry_weights.view",
+    "ingredients.edit",
+    "ingredients.view",
+    "location_codes.edit",
+    "location_codes.view",
+    "pellet_bags.edit",
+    "pellet_bags.view",
+    "sets.edit",
+    "sets.view",
+    "status_lists.edit",
+    "status_lists.view",
+    "utilities.view",
+}
 # Admin inherits every defined permission.
 ADMIN_PERMISSIONS = set(PERMISSIONS)
 
@@ -96,6 +119,7 @@ ROLE_GROUP_PERMISSIONS = {
     "sku_codes": SKU_CODES_PERMISSIONS,
     "formulations": FORMULATIONS_PERMISSIONS,
     "formulations_mix": FORMULATIONS_MIX_PERMISSIONS,
+    "mixing_1": MIXING_1_PERMISSIONS,
     "admin": ADMIN_PERMISSIONS,
 }
 
@@ -129,14 +153,21 @@ SIDEBAR_GROUPS = [
         ],
     },
     {
+        "id": "mixing_1",
+        "label": "Mixing 1",
+        "default_open": True,
+        "items": [
+            {"label": "Mixing Location", "href": "/location_codes", "permission": "location_codes.view"},
+            {"label": "Mixing How", "href": "/compounding_how", "permission": "compounding_how.view"},
+            {"label": "Mixed Product", "href": "/pellet_bags", "permission": "pellet_bags.view"},
+        ],
+    },
+    {
         "id": "system",
         "label": "System",
         "default_open": True,
         "items": [
             {"label": "Utilities", "href": "/utilities", "permission": "utilities.view"},
-            {"label": "Location Codes", "href": "/location_codes", "permission": "location_codes.view"},
-            {"label": "Compounding How", "href": "/compounding_how", "permission": "compounding_how.view"},
-            {"label": "Pellet Bags", "href": "/pellet_bags", "permission": "pellet_bags.view"},
             {"label": "Conversion 1 Context", "href": "/conversion1/context", "permission": "conversion1.view"},
             {"label": "Conversion 1 How", "href": "/conversion1/how", "permission": "conversion1.view"},
             {"label": "Conversion 1 Products", "href": "/conversion1/products", "permission": "conversion1.view"},
