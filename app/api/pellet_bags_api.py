@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, PelletBagCreate, PelletBagUpdate
@@ -154,10 +154,14 @@ def get_pellet_bag_meta(request: Request, bigquery: BigQueryService = Depends(ge
 
 
 @router.get("", response_model=ApiResponse)
-def list_pellet_bags(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_pellet_bags(
+    request: Request,
+    q: str | None = Query(default=None),
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> ApiResponse:
     # Return all pellet bag rows for the management table.
     require_permission(request, "pellet_bags.view")
-    return ApiResponse(ok=True, data={"items": bigquery.list_pellet_bags()})
+    return ApiResponse(ok=True, data={"items": bigquery.list_pellet_bags(search=(q or "").strip() or None)})
 
 
 @router.post("", response_model=ApiResponse)

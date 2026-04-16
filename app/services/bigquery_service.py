@@ -155,7 +155,7 @@ class BigQueryService:
             },
             "location_partners": {"partner_code", "partner_name", "machine_specification", "created_at", "created_by"},
             "location_codes": {"set_code", "weight_code", "batch_variant_code", "partner_code", "production_date", "location_id", "created_at", "created_by"},
-            "compounding_how": {"processing_code", "location_code", "process_code_suffix", "failure_mode", "machine_setup_url", "processed_data_url", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
+            "compounding_how": {"processing_code", "location_code", "process_code_suffix", "failure_mode", "machine_setup_url", "processed_data_url", "notes", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "code_counters": {"counter_name", "scope", "next_value", "updated_at"},
             "pellet_bags": {"pellet_bag_id", "pellet_bag_code", "pellet_bag_code_tokens", "compounding_how_code", "product_type", "sequence_number", "bag_mass_kg", "remaining_mass_kg", "short_moisture_percent", "purpose", "reference_sample_taken", "qc_status", "long_moisture_status", "density_status", "injection_moulding_status", "film_forming_status", "long_moisture_assignee_email", "density_assignee_email", "injection_moulding_assignee_email", "film_forming_assignee_email", "notes", "customer", "created_at", "updated_at", "created_by", "updated_by", "is_active"},
             "pellet_bag_assignees": {"email", "is_active", "created_at", "created_by"},
@@ -1593,15 +1593,16 @@ class BigQueryService:
         failure_mode: str,
         machine_setup_url: Optional[str],
         processed_data_url: Optional[str],
+        notes: Optional[str],
         created_by: Optional[str],
     ) -> None:
         # Insert immutable core metadata with mutable link fields for later edits.
         query = (
             f"INSERT `{self.dataset}.compounding_how` "
-            "(processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, "
-            "processed_data_url, created_at, updated_at, created_by, updated_by, is_active) "
-            "VALUES (@processing_code, @location_code, @process_code_suffix, @failure_mode, @machine_setup_url, "
-            "@processed_data_url, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @created_by, @updated_by, TRUE)"
+            "(processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, processed_data_url, "
+            "notes, created_at, updated_at, created_by, updated_by, is_active) "
+            "VALUES (@processing_code, @location_code, @process_code_suffix, @failure_mode, @machine_setup_url, @processed_data_url, "
+            "@notes, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), @created_by, @updated_by, TRUE)"
         )
         self._run(
             query,
@@ -1612,6 +1613,7 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("failure_mode", "STRING", failure_mode),
                 bigquery.ScalarQueryParameter("machine_setup_url", "STRING", machine_setup_url),
                 bigquery.ScalarQueryParameter("processed_data_url", "STRING", processed_data_url),
+                bigquery.ScalarQueryParameter("notes", "STRING", notes),
                 bigquery.ScalarQueryParameter("created_by", "STRING", created_by),
                 bigquery.ScalarQueryParameter("updated_by", "STRING", created_by),
             ],
@@ -1639,15 +1641,21 @@ class BigQueryService:
         )
         return bool(rows)
 
-    def list_compounding_how(self) -> List[Dict[str, Any]]:
+    def list_compounding_how(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
         # List active compounding records for the table below the form.
+        where_clauses = ["is_active = TRUE"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        # Apply case-insensitive partial-match filtering against process suffix / processing code values.
+        if search:
+            where_clauses.append("(LOWER(processing_code) LIKE @search OR LOWER(process_code_suffix) LIKE @search)")
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", f"%{search.lower()}%"))
         query = (
-            f"SELECT processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, "
-            "processed_data_url, created_at, updated_at, created_by, updated_by "
-            f"FROM `{self.dataset}.compounding_how` WHERE is_active = TRUE "
+            f"SELECT processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, processed_data_url, "
+            "notes, created_at, updated_at, created_by, updated_by "
+            f"FROM `{self.dataset}.compounding_how` WHERE {' AND '.join(where_clauses)} "
             "ORDER BY created_at DESC, processing_code DESC"
         )
-        rows = self._run(query, []).result()
+        rows = self._run(query, params).result()
         return [dict(row) for row in rows]
 
     def list_compounding_how_codes(self) -> List[str]:
@@ -1676,13 +1684,15 @@ class BigQueryService:
         failure_mode: str,
         machine_setup_url: Optional[str],
         processed_data_url: Optional[str],
+        notes: Optional[str],
         updated_by: Optional[str],
     ) -> None:
         # Restrict updates to editable fields only, preserving immutable identifiers and timestamps.
         query = (
             f"UPDATE `{self.dataset}.compounding_how` "
             "SET failure_mode = @failure_mode, machine_setup_url = @machine_setup_url, "
-            "processed_data_url = @processed_data_url, updated_at = CURRENT_TIMESTAMP(), updated_by = @updated_by "
+            "processed_data_url = @processed_data_url, notes = @notes, "
+            "updated_at = CURRENT_TIMESTAMP(), updated_by = @updated_by "
             "WHERE processing_code = @processing_code AND is_active = TRUE"
         )
         self._run(
@@ -1691,6 +1701,7 @@ class BigQueryService:
                 bigquery.ScalarQueryParameter("failure_mode", "STRING", failure_mode),
                 bigquery.ScalarQueryParameter("machine_setup_url", "STRING", machine_setup_url),
                 bigquery.ScalarQueryParameter("processed_data_url", "STRING", processed_data_url),
+                bigquery.ScalarQueryParameter("notes", "STRING", notes),
                 bigquery.ScalarQueryParameter("updated_by", "STRING", updated_by),
                 bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code),
             ],
@@ -1962,16 +1973,118 @@ class BigQueryService:
         )
         return [dict(row) for row in self._run(query, [bigquery.ScalarQueryParameter("limit", "INT64", limit)]).result()]
 
-    def list_pellet_bags(self) -> List[Dict[str, Any]]:
+    def list_pellet_bags(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
         # Return active pellet bag records newest-first for the management table.
+        where_clauses = ["is_active = TRUE"]
+        params: List[bigquery.ScalarQueryParameter] = []
+        # Support case-insensitive partial code filtering for responsive pellet-bag search UX.
+        if search:
+            where_clauses.append("LOWER(pellet_bag_code) LIKE @search")
+            params.append(bigquery.ScalarQueryParameter("search", "STRING", f"%{search.lower()}%"))
         query = (
             f"SELECT pellet_bag_id, pellet_bag_code, pellet_bag_code_tokens, compounding_how_code, product_type, sequence_number, "
             "bag_mass_kg, remaining_mass_kg, short_moisture_percent, purpose, reference_sample_taken, qc_status, "
             "long_moisture_status, density_status, injection_moulding_status, film_forming_status, "
             "long_moisture_assignee_email, density_assignee_email, injection_moulding_assignee_email, film_forming_assignee_email, notes, customer, created_at, updated_at, created_by, updated_by "
-            f"FROM `{self.dataset}.pellet_bags` WHERE is_active = TRUE ORDER BY created_at DESC, sequence_number DESC"
+            f"FROM `{self.dataset}.pellet_bags` WHERE {' AND '.join(where_clauses)} ORDER BY created_at DESC, sequence_number DESC"
         )
-        return [dict(row) for row in self._run(query, []).result()]
+        return [dict(row) for row in self._run(query, params).result()]
+
+    def get_compounding_how_detail(self, processing_code: str) -> Optional[Dict[str, Any]]:
+        # Load one compounding-how record and attach all related pellet bags that reference its processing code.
+        compounding_query = (
+            f"SELECT processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, processed_data_url, notes, "
+            "created_at, updated_at, created_by, updated_by "
+            f"FROM `{self.dataset}.compounding_how` "
+            "WHERE processing_code = @processing_code AND is_active = TRUE LIMIT 1"
+        )
+        rows = list(self._run(compounding_query, [bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code)]).result())
+        if not rows:
+            return None
+        compounding = dict(rows[0])
+        pellet_bag_query = (
+            f"SELECT pellet_bag_id, pellet_bag_code, compounding_how_code, product_type, bag_mass_kg, remaining_mass_kg, created_at, created_by "
+            f"FROM `{self.dataset}.pellet_bags` "
+            "WHERE compounding_how_code = @processing_code AND is_active = TRUE "
+            "ORDER BY created_at DESC, sequence_number DESC"
+        )
+        pellet_bags = [
+            dict(row)
+            for row in self._run(pellet_bag_query, [bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code)]).result()
+        ]
+        return {"compounding_how": compounding, "pellet_bags": pellet_bags}
+
+    def get_batch_selection_detail(self, base_code: str) -> Dict[str, Any]:
+        # Resolve one formulation base code (set + weight + variant) into linked formulation, location, and pellet-bag records.
+        parts = [part.strip().upper() for part in str(base_code or "").split() if part.strip()]
+        if len(parts) != 3:
+            return {"base_code": base_code, "formulation": None, "location_codes": [], "compounding_how": [], "pellet_bags": []}
+        set_code, weight_code, batch_variant_code = parts
+        formulation_query = (
+            f"SELECT * FROM `{self.dataset}.v_formulations_flat` "
+            "WHERE set_code = @set_code AND weight_code = @weight_code AND batch_variant_code = @batch_variant_code "
+            "ORDER BY created_at DESC LIMIT 1"
+        )
+        formulation_rows = list(
+            self._run(
+                formulation_query,
+                [
+                    bigquery.ScalarQueryParameter("set_code", "STRING", set_code),
+                    bigquery.ScalarQueryParameter("weight_code", "STRING", weight_code),
+                    bigquery.ScalarQueryParameter("batch_variant_code", "STRING", batch_variant_code),
+                ],
+            ).result()
+        )
+        location_query = (
+            f"SELECT location_id, set_code, weight_code, batch_variant_code, partner_code, production_date, created_at, created_by "
+            f"FROM `{self.dataset}.location_codes` "
+            "WHERE set_code = @set_code AND weight_code = @weight_code AND batch_variant_code = @batch_variant_code "
+            "ORDER BY created_at DESC"
+        )
+        location_codes = [
+            dict(row)
+            for row in self._run(
+                location_query,
+                [
+                    bigquery.ScalarQueryParameter("set_code", "STRING", set_code),
+                    bigquery.ScalarQueryParameter("weight_code", "STRING", weight_code),
+                    bigquery.ScalarQueryParameter("batch_variant_code", "STRING", batch_variant_code),
+                ],
+            ).result()
+        ]
+        location_ids = [row["location_id"] for row in location_codes if row.get("location_id")]
+        compounding_how: List[Dict[str, Any]] = []
+        pellet_bags: List[Dict[str, Any]] = []
+        if location_ids:
+            compounding_query = (
+                f"SELECT processing_code, location_code, process_code_suffix, failure_mode, machine_setup_url, processed_data_url, notes, created_at, created_by "
+                f"FROM `{self.dataset}.compounding_how` "
+                "WHERE is_active = TRUE AND location_code IN UNNEST(@location_ids) "
+                "ORDER BY created_at DESC"
+            )
+            compounding_how = [
+                dict(row)
+                for row in self._run(compounding_query, [bigquery.ArrayQueryParameter("location_ids", "STRING", location_ids)]).result()
+            ]
+            processing_codes = [row["processing_code"] for row in compounding_how if row.get("processing_code")]
+            if processing_codes:
+                pellet_query = (
+                    f"SELECT pellet_bag_id, pellet_bag_code, compounding_how_code, product_type, bag_mass_kg, created_at, created_by "
+                    f"FROM `{self.dataset}.pellet_bags` "
+                    "WHERE is_active = TRUE AND compounding_how_code IN UNNEST(@processing_codes) "
+                    "ORDER BY created_at DESC"
+                )
+                pellet_bags = [
+                    dict(row)
+                    for row in self._run(pellet_query, [bigquery.ArrayQueryParameter("processing_codes", "STRING", processing_codes)]).result()
+                ]
+        return {
+            "base_code": f"{set_code} {weight_code} {batch_variant_code}",
+            "formulation": dict(formulation_rows[0]) if formulation_rows else None,
+            "location_codes": location_codes,
+            "compounding_how": compounding_how,
+            "pellet_bags": pellet_bags,
+        }
 
     def list_pellet_bag_codes(self) -> List[str]:
         # Return unique pellet bag codes for dropdown/manual validation on conversion pages.

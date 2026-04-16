@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Show the selected batch-selection code and core formulation metadata first for orientation. -->
+  <h2>Batch Selection detail</h2>
+  <table>
+    <tbody>
+      <tr><th>base_code</th><td>{{ detail.base_code }}</td></tr>
+      {% if detail.formulation %}
+      <tr><th>set_code</th><td>{{ detail.formulation.set_code }}</td></tr>
+      <tr><th>weight_code</th><td>{{ detail.formulation.weight_code }}</td></tr>
+      <tr><th>batch_variant_code</th><td>{{ detail.formulation.batch_variant_code }}</td></tr>
+      <tr><th>created_at</th><td>{{ detail.formulation.created_at | created_at_display }}</td></tr>
+      <tr><th>created_by</th><td>{{ detail.formulation.created_by or '' }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <!-- Render linked location codes to expose production date and partner-level context. -->
+  <h2>Location codes</h2>
+  <table>
+    <thead><tr><th>Location code</th><th>Production date</th><th>Created at</th><th>Owner</th></tr></thead>
+    <tbody>
+      {% for row in detail.location_codes %}
+      <tr>
+        <td>{{ row.location_id }}</td>
+        <td>{{ row.production_date }}</td>
+        <td>{{ row.created_at | created_at_display }}</td>
+        <td>{{ row.created_by or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No linked location codes found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <!-- Render linked mixing-how records so code-level drilldown spans the full chain. -->
+  <h2>Mixing How records</h2>
+  <table>
+    <thead><tr><th>Processing code</th><th>Failure mode</th><th>Process code suffix</th><th>Notes</th><th>Created at</th></tr></thead>
+    <tbody>
+      {% for row in detail.compounding_how %}
+      <tr>
+        <td><a href="/compounding_how/{{ row.processing_code }}">{{ row.processing_code }}</a></td>
+        <td>{{ row.failure_mode }}</td>
+        <td>{{ row.process_code_suffix }}</td>
+        <td>{{ row.notes or '' }}</td>
+        <td>{{ row.created_at | created_at_display }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No linked mixing how records found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <!-- Render linked pellet bags so the downstream outputs of the batch-selection code are visible. -->
+  <h2>Related pellet bags</h2>
+  <table>
+    <thead><tr><th>Pellet bag code</th><th>Compounding how code</th><th>Product type</th><th>Bag mass kg</th><th>Created at</th></tr></thead>
+    <tbody>
+      {% for row in detail.pellet_bags %}
+      <tr>
+        <td><a href="/pellet-bags/{{ row.pellet_bag_code }}">{{ row.pellet_bag_code }}</a></td>
+        <td><a href="/compounding_how/{{ row.compounding_how_code }}">{{ row.compounding_how_code }}</a></td>
+        <td>{{ row.product_type }}</td>
+        <td>{{ row.bag_mass_kg }}</td>
+        <td>{{ row.created_at | created_at_display }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No linked pellet bags found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

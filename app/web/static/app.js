@@ -443,6 +443,41 @@ function normalizeTwoLetterCode(rawValue) {
   return normalized;
 }
 
+// Resolve entity-code routes centrally so code-like table cells can share one drilldown-link pattern.
+function buildCodeDetailHref(entityType, codeValue, context = {}) {
+  // Normalize inbound values once so every consumer gets consistent trimming behavior.
+  const code = (codeValue || '').toString().trim();
+  if (!code) return '';
+  // Route each known code type to its dedicated detail destination.
+  if (entityType === 'pellet_bag') return `/pellet-bags/${encodeURIComponent(code)}`;
+  if (entityType === 'compounding_how') return `/compounding_how/${encodeURIComponent(code)}`;
+  if (entityType === 'batch_selection') return `/batch_selection/${encodeURIComponent(code)}`;
+  if (entityType === 'sku') return `/ingredients/${encodeURIComponent(code)}`;
+  if (entityType === 'ingredient_batch') {
+    const sku = (context.sku || '').toString().trim();
+    if (!sku) return '';
+    return `/batches/${encodeURIComponent(sku)}/${encodeURIComponent(code)}`;
+  }
+  // Fall back to no-link when entity type is unknown or unsupported by current routes.
+  return '';
+}
+
+// Build one reusable anchor element for code drilldowns while gracefully falling back to plain text.
+function createCodeLink(entityType, codeValue, context = {}) {
+  // Resolve href from centralized mapping so new route support can be added in one place.
+  const href = buildCodeDetailHref(entityType, codeValue, context);
+  const label = (codeValue || '').toString();
+  if (!href) {
+    const span = document.createElement('span');
+    span.textContent = label;
+    return span;
+  }
+  const link = document.createElement('a');
+  link.href = href;
+  link.textContent = label;
+  return link;
+}
+
 // Build generic prev/next pagination wiring with page labels and disabled state handling.
 function updatePagerControls({ prevButton, nextButton, label, page, total, pageSize }) {
   const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
@@ -1448,11 +1483,12 @@ function attachBatchVariantLookupForm() {
       (variant.items || []).forEach((item) => {
         skuMap.set(item.sku, item.ingredient_batch_code);
       });
+      const formulationCode = [variant.set_code || '', variant.weight_code || '', variant.batch_variant_code || ''].join(' ').trim();
       return [
         variant.set_code || '',
         variant.weight_code || '',
-        variant.batch_variant_code || '',
-        ...skuList.map((sku) => skuMap.get(sku) || ''),
+        createCodeLink('batch_selection', formulationCode),
+        ...skuList.map((sku) => createCodeLink('ingredient_batch', skuMap.get(sku) || '', { sku })),
       ];
     });
     buildTable(output, headers, rows, 'No batch variants found.');
@@ -1584,6 +1620,8 @@ function renderFormulationsTable(output, items, options = {}) {
       if (index === 0) {
         const formulationCell = document.createElement('td');
         formulationCell.rowSpan = lineCount;
+        const formulationLink = createCodeLink('batch_selection', formulationCode);
+        formulationCell.appendChild(formulationLink);
         formulationCell.appendChild(createCopyTextBlock(formulationCode, 'formulation-copy'));
 
         const createdCell = document.createElement('td');
@@ -1606,10 +1644,19 @@ function renderFormulationsTable(output, items, options = {}) {
 
       const skuCell = document.createElement('td');
       skuCell.classList.add('formulation-detail-cell');
-      skuCell.textContent = sku;
+      if (sku === '—') {
+        skuCell.textContent = '—';
+      } else {
+        skuCell.appendChild(createCodeLink('sku', sku));
+      }
       const batchCell = document.createElement('td');
       batchCell.classList.add('formulation-detail-cell');
-      batchCell.textContent = sku === '—' ? '—' : (batchMap.get(sku) || '');
+      const ingredientBatchCode = sku === '—' ? '—' : (batchMap.get(sku) || '');
+      if (ingredientBatchCode === '—') {
+        batchCell.textContent = ingredientBatchCode;
+      } else {
+        batchCell.appendChild(createCodeLink('ingredient_batch', ingredientBatchCode, { sku }));
+      }
       row.appendChild(skuCell);
       // Append the dry-weight cell only when the current viewer is permitted to see percentage data.
       if (showDryWeights) {
@@ -1834,6 +1881,11 @@ function attachLocationCodePage() {
       items.forEach((item) => {
         const row = document.createElement('tr');
         const locationCell = document.createElement('td');
+        // Add formulation-level drilldown when location code includes set/weight/batch tokens.
+        const locationParts = (item.location_id || '').toString().trim().split(/\s+/).filter(Boolean);
+        if (locationParts.length >= 3) {
+          locationCell.appendChild(createCodeLink('batch_selection', locationParts.slice(0, 3).join(' ')));
+        }
         locationCell.appendChild(createCopyTextBlock(item.location_id || '', 'location-copy'));
         const ownerCell = document.createElement('td');
         ownerCell.textContent = item.created_by || 'Unknown';
@@ -2009,6 +2061,8 @@ function attachCompoundingHowPage() {
   const allocateButton = document.getElementById('compounding-allocate');
   const failureModeSelect = document.getElementById('compounding-failure-mode');
   const output = document.getElementById('compounding-how-results');
+  const filterForm = document.getElementById('compounding-how-filter-form');
+  const searchInput = document.getElementById('compounding-how-search');
 
   // Keep processing code preview synchronized with selected location code and generated suffix.
   function updatePreview() {
@@ -2051,7 +2105,11 @@ function attachCompoundingHowPage() {
 
   // Render compounding-how records and expose inline edit controls for permitted mutable fields.
   async function loadItems() {
-    const data = await fetchJson('/api/compounding_how');
+    // Submit optional processing-code filter text to backend for case-insensitive partial matching.
+    const params = new URLSearchParams();
+    const query = (searchInput?.value || '').toString().trim();
+    if (query) params.set('q', query);
+    const data = await fetchJson(`/api/compounding_how${params.toString() ? `?${params.toString()}` : ''}`);
     const items = data.items || [];
     clearElement(output);
 
@@ -2063,13 +2121,16 @@ function attachCompoundingHowPage() {
     }
 
     const table = document.createElement('table');
-    table.innerHTML = '<thead><tr><th>Processing Code</th><th>Date created</th><th>Owner</th><th>Failure Mode</th><th>Machine Setup File</th><th>Processed Data File</th><th>Actions</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>Processing Code</th><th>Date created</th><th>Owner</th><th>Failure Mode</th><th>Machine Setup File</th><th>Processed Data File</th><th>Notes</th><th>Actions</th></tr></thead>';
     const tbody = document.createElement('tbody');
 
     items.forEach((item) => {
       const row = document.createElement('tr');
       const processingCodeCell = document.createElement('td');
-      processingCodeCell.appendChild(createCopyTextBlock(item.processing_code || '', 'processing-copy'));
+      const processingWrapper = document.createElement('div');
+      processingWrapper.appendChild(createCodeLink('compounding_how', item.processing_code || ''));
+      processingWrapper.appendChild(createCopyTextBlock(item.processing_code || '', 'processing-copy'));
+      processingCodeCell.appendChild(processingWrapper);
 
       const createdCell = document.createElement('td');
       createdCell.textContent = formatTimestampForTable(item.created_at);
@@ -2121,6 +2182,13 @@ function attachCompoundingHowPage() {
         processedCell.appendChild(openProcessedLink);
       }
 
+      const notesCell = document.createElement('td');
+      const notesInput = document.createElement('input');
+      notesInput.type = 'text';
+      notesInput.value = item.notes || '';
+      notesInput.disabled = true;
+      notesCell.appendChild(notesInput);
+
       const actionCell = document.createElement('td');
       const editButton = document.createElement('button');
       editButton.type = 'button';
@@ -2135,6 +2203,7 @@ function attachCompoundingHowPage() {
           failureInput.disabled = false;
           machineInput.disabled = false;
           processedInput.disabled = false;
+          notesInput.disabled = false;
           return;
         }
 
@@ -2149,6 +2218,7 @@ function attachCompoundingHowPage() {
                 failure_mode: failureInput.value,
                 machine_setup_url: machineInput.value,
                 processed_data_url: processedInput.value,
+                notes: notesInput.value,
               }),
             });
             editButton.dataset.mode = '';
@@ -2156,6 +2226,7 @@ function attachCompoundingHowPage() {
             failureInput.disabled = true;
             machineInput.disabled = true;
             processedInput.disabled = true;
+            notesInput.disabled = true;
             // Save success text for post-overlay popup timing.
             successMessage = `Updated ${item.processing_code || 'record'}.`;
           } catch (error) {
@@ -2170,7 +2241,7 @@ function attachCompoundingHowPage() {
         }
       });
 
-      row.append(processingCodeCell, createdCell, ownerCell, failureCell, machineCell, processedCell, actionCell);
+      row.append(processingCodeCell, createdCell, ownerCell, failureCell, machineCell, processedCell, notesCell, actionCell);
       tbody.appendChild(row);
     });
 
@@ -2206,6 +2277,7 @@ function attachCompoundingHowPage() {
           failure_mode: (formData.get('failure_mode') || '').toString().trim(),
           machine_setup_url: (formData.get('machine_setup_url') || '').toString().trim(),
           processed_data_url: (formData.get('processed_data_url') || '').toString().trim(),
+          notes: (formData.get('notes') || '').toString().trim(),
         });
         form.reset();
         // After save, fetch the next submitted-based suffix and restore preview helpers.
@@ -2226,6 +2298,14 @@ function attachCompoundingHowPage() {
       alert(successMessage);
     }
   });
+
+  // Re-run server-side filter query from current page data when users submit the search form.
+  if (filterForm) {
+    filterForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await loadItems().catch((error) => alert(error.message));
+    });
+  }
 
   loadMeta().then(loadItems).catch((error) => alert(error.message));
 }
@@ -2275,6 +2355,8 @@ function attachPelletBagsPage() {
   const status = document.getElementById('pellet-create-status');
   const createdCodesContainer = document.getElementById('pellet-created-codes');
   const output = document.getElementById('pellet-bags-results');
+  const filterForm = document.getElementById('pellet-bags-filter-form');
+  const searchInput = document.getElementById('pellet-bags-search');
 
   const productType = document.getElementById('pellet-product-type');
   const purpose = document.getElementById('pellet-purpose');
@@ -2388,7 +2470,10 @@ function attachPelletBagsPage() {
 
   async function loadItems() {
     // Render the created bag table and enable in-row editing for optional fields only.
-    const data = await fetchJson('/api/pellet_bags');
+    const params = new URLSearchParams();
+    const query = (searchInput?.value || '').toString().trim();
+    if (query) params.set('q', query);
+    const data = await fetchJson(`/api/pellet_bags${params.toString() ? `?${params.toString()}` : ''}`);
     const items = data.items || [];
     clearElement(output);
     const table = document.createElement('table');
@@ -2524,6 +2609,14 @@ function attachPelletBagsPage() {
       await loadItems();
     });
   });
+
+  // Support responsive server-side code filtering by rerendering the table from filtered API data.
+  if (filterForm) {
+    filterForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await loadItems().catch((error) => alert(error.message));
+    });
+  }
 
   loadMeta().then(loadItems).catch((error) => alert(error.message));
 }

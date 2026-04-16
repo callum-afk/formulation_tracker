@@ -82,6 +82,12 @@
 <section class="panel">
   <!-- Table shows all created pellet bag metadata and can open inline editing for optional fields. -->
   <h2>Created bags table</h2>
+  <form id="pellet-bags-filter-form" class="form-stack">
+    <label>Search pellet bag code
+      <input id="pellet-bags-search" name="q" placeholder="e.g. 231023 or EV AB AL" />
+    </label>
+    <button type="submit">Search</button>
+  </form>
   <div id="pellet-bags-results"></div>
 </section>
 {% endblock %}

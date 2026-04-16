@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <!-- Render immutable and editable compounding metadata in one key/value detail table. -->
+  <h2>Mixing How detail</h2>
+  <table>
+    <tbody>
+      {% for key, value in detail.compounding_how.items() %}
+      {% set location_parts = (value.split(' ') if key == 'location_code' and value else []) %}
+      <tr>
+        <th>{{ key }}</th>
+        {% if key == "processing_code" %}
+        <td><a href="/compounding_how/{{ value }}">{{ value }}</a></td>
+        {% elif key == "location_code" and location_parts|length >= 3 %}
+        <td><a href="/batch_selection/{{ location_parts[0] }} {{ location_parts[1] }} {{ location_parts[2] }}">{{ value }}</a></td>
+        {% else %}
+        <td>{{ value }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <!-- Keep related pellet bags directly visible so operators can drill down quickly from compounding records. -->
+  <h2>Related pellet bags</h2>
+  <table>
+    <thead>
+      <tr><th>Pellet bag code</th><th>Product type</th><th>Bag mass kg</th><th>Remaining mass kg</th><th>Created at</th><th>Owner</th></tr>
+    </thead>
+    <tbody>
+      {% for bag in detail.pellet_bags %}
+      <tr>
+        <td><a href="/pellet-bags/{{ bag.pellet_bag_code }}">{{ bag.pellet_bag_code }}</a></td>
+        <td>{{ bag.product_type }}</td>
+        <td>{{ bag.bag_mass_kg }}</td>
+        <td>{{ bag.remaining_mass_kg }}</td>
+        <td>{{ bag.created_at | created_at_display }}</td>
+        <td>{{ bag.created_by or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No related pellet bags found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

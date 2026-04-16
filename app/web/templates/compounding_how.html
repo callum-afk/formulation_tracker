@@ -2,7 +2,7 @@
 {% block content %}
 <section class="panel">
   <!-- Compounding how form creates a processing code by appending a generated AB-style suffix. -->
-  <h2>How</h2>
+  <h2>Mixing How</h2>
   <form id="compounding-how-form" class="form-stack">
     <div class="grid">
       <label>Location code
@@ -30,6 +30,9 @@
       <label>Google sheet link: Processed Data File
         <input name="processed_data_url" type="url" placeholder="https://..." />
       </label>
+      <label>Notes
+        <textarea name="notes"></textarea>
+      </label>
     </div>
     <button type="submit">Save compounding how</button>
   </form>
@@ -37,7 +40,13 @@
 
 <section class="panel">
   <!-- Table keeps immutable metadata visible while enabling edits for links and failure mode only. -->
-  <h2>How entries</h2>
+  <h2>Mixing How entries</h2>
+  <form id="compounding-how-filter-form" class="form-stack">
+    <label>Search processing code / suffix
+      <input id="compounding-how-search" name="q" placeholder="e.g. LX" />
+    </label>
+    <button type="submit">Search</button>
+  </form>
   <div id="compounding-how-results"></div>
 </section>
 {% endblock %}

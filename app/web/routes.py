@@ -10,6 +10,7 @@ from app.dependencies import get_bigquery, get_settings, get_storage
 from app.constants import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.api.pellet_bags_api import DEFAULT_ASSIGNEE_EMAILS, STATUS_LIST_COLUMN_WHITELIST, get_allowed_status_options, normalize_status_value
 from app.constants import MATERIAL_WORKSTREAM_OPTIONS
+from app.models import UserRoleUpsert
 from app.services.bigquery_service import BigQueryService
 from app.services.permission_service import can_view_dry_weights, require_permission
 from app.services.storage_service import StorageService
@@ -250,7 +251,7 @@ async def compounding_how(request: Request) -> HTMLResponse:
     require_permission(request, "compounding_how.view")
     return templates.TemplateResponse(
         "compounding_how.html",
-        {"request": request, "title": "How"},
+        {"request": request, "title": "Mixing How"},
     )
 
 @router.get("/conversion1/context", response_class=HTMLResponse)
@@ -658,6 +659,32 @@ async def pellet_bag_detail(pellet_bag_code: str, request: Request, bigquery: Bi
     )
 
 
+@router.get("/compounding_how/{processing_code}", response_class=HTMLResponse)
+async def compounding_how_detail(processing_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Render one compounding-how detail page and include linked pellet-bag records for contextual drilldown.
+    require_permission(request, "compounding_how.view")
+    detail = bigquery.get_compounding_how_detail(processing_code)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Compounding how not found")
+    return templates.TemplateResponse(
+        "compounding_how_detail.html",
+        {"request": request, "title": f"Mixing How {processing_code}", "detail": _to_json_safe(detail)},
+    )
+
+
+@router.get("/batch_selection/{base_code}", response_class=HTMLResponse)
+async def batch_selection_detail(base_code: str, request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> HTMLResponse:
+    # Render one batch-selection code detail page with all currently linked location/compounding/pellet records.
+    require_permission(request, "batch_selection.view")
+    detail = bigquery.get_batch_selection_detail(base_code)
+    if not detail.get("formulation"):
+        raise HTTPException(status_code=404, detail="Batch selection code not found")
+    return templates.TemplateResponse(
+        "batch_selection_detail.html",
+        {"request": request, "title": f"Batch Selection {detail['base_code']}", "detail": _to_json_safe(detail)},
+    )
+
+
 @router.get("/ingredients/{sku}/msds")
 async def ingredient_msds_download(
     sku: str,
@@ -697,21 +724,40 @@ async def user_roles_page(request: Request, bigquery: BigQueryService = Depends(
 @router.post("/admin/user-roles", response_class=HTMLResponse)
 async def user_roles_submit(
     request: Request,
-    email: str = Form(...),
+    email: str = Form(""),
     first_name: str = Form(""),
     last_name: str = Form(""),
-    role_group: str = Form(...),
+    role_group: str = Form(""),
     is_active: str = Form("true"),
     bigquery: BigQueryService = Depends(get_bigquery),
 ) -> HTMLResponse:
     # Restrict role edits to admins only and then persist the submitted role assignment.
     require_permission(request, "admin.user_roles.edit")
-    bigquery.create_or_update_user_role(
-        email=email.strip().lower(),
-        first_name=first_name.strip() or None,
-        last_name=last_name.strip() or None,
-        role_group=role_group.strip().lower(),
+    # Accept both JSON and standard form submissions so role edits remain robust across UI submission modes.
+    if not email or not role_group:
+        content_type = (request.headers.get("content-type") or "").lower()
+        if "application/json" in content_type:
+            payload = await request.json()
+            parsed = UserRoleUpsert(**payload)
+            email = parsed.email
+            first_name = parsed.first_name or ""
+            last_name = parsed.last_name or ""
+            role_group = parsed.role_group
+            is_active = "true" if parsed.is_active else "false"
+    # Re-validate normalized values through the shared model so form and JSON submissions follow one contract.
+    parsed_payload = UserRoleUpsert(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        role_group=role_group,
         is_active=is_active.strip().lower() == "true",
+    )
+    bigquery.create_or_update_user_role(
+        email=parsed_payload.email,
+        first_name=parsed_payload.first_name,
+        last_name=parsed_payload.last_name,
+        role_group=parsed_payload.role_group,
+        is_active=parsed_payload.is_active,
         actor_email=request.state.user_email,
     )
     # Redirect after POST so refreshes do not resubmit the same admin change accidentally.
