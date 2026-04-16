@@ -223,6 +223,8 @@ class CompoundingHowCreate(BaseModel):
     machine_setup_url: Optional[str] = None
     # Optional processed data sheet URL for post-run analysis linkage.
     processed_data_url: Optional[str] = None
+    # Optional notes field for contextual operator comments tied to the compounding record.
+    notes: Optional[str] = None
 
 
 class CompoundingHowUpdate(BaseModel):
@@ -232,6 +234,8 @@ class CompoundingHowUpdate(BaseModel):
     machine_setup_url: Optional[str] = None
     # Optional processed data URL can be added or updated after initial save.
     processed_data_url: Optional[str] = None
+    # Optional notes can be updated after creation for lightweight production annotations.
+    notes: Optional[str] = None
 
 
 class PelletBagCreate(BaseModel):

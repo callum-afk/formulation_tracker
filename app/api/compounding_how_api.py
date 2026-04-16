@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.dependencies import get_actor, get_bigquery
 from app.models import ApiResponse, CompoundingHowCreate, CompoundingHowUpdate
@@ -21,10 +21,14 @@ def get_compounding_how_meta(request: Request, bigquery: BigQueryService = Depen
 
 
 @router.get("", response_model=ApiResponse)
-def list_compounding_how(request: Request, bigquery: BigQueryService = Depends(get_bigquery)) -> ApiResponse:
+def list_compounding_how(
+    request: Request,
+    q: str | None = Query(default=None),
+    bigquery: BigQueryService = Depends(get_bigquery),
+) -> ApiResponse:
     # Return all active compounding how entries for the table beneath the creation form.
     require_permission(request, "compounding_how.view")
-    return ApiResponse(ok=True, data={"items": bigquery.list_compounding_how()})
+    return ApiResponse(ok=True, data={"items": bigquery.list_compounding_how(search=(q or "").strip() or None)})
 
 
 @router.post("", response_model=ApiResponse)
@@ -58,6 +62,7 @@ def create_compounding_how(
         failure_mode=payload.failure_mode,
         machine_setup_url=(payload.machine_setup_url or "").strip() or None,
         processed_data_url=(payload.processed_data_url or "").strip() or None,
+        notes=(payload.notes or "").strip() or None,
         created_by=actor.email if actor else None,
     )
     return ApiResponse(ok=True, data={"processing_code": processing_code})
@@ -91,6 +96,7 @@ def update_compounding_how(
         failure_mode=payload.failure_mode,
         machine_setup_url=(payload.machine_setup_url or "").strip() or None,
         processed_data_url=(payload.processed_data_url or "").strip() or None,
+        notes=(payload.notes or "").strip() or None,
         updated_by=actor.email if actor else None,
     )
     return ApiResponse(ok=True, data={"processing_code": processing_code})
