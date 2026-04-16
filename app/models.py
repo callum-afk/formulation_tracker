@@ -42,8 +42,9 @@ class UserRoleUpsert(BaseModel):
     def normalize_role_group(cls, value: str) -> str:
         # Restrict role groups to the supported named profiles requested for the new admin workflow.
         normalized = (value or "").strip().lower()
-        if normalized not in {"sku_codes", "formulations", "formulations_mix", "admin"}:
-            raise ValueError("role_group must be one of sku_codes, formulations, formulations_mix, admin")
+        # Include the new Mixing 1 role profile so admins can assign formulation + mixing access in one step.
+        if normalized not in {"sku_codes", "formulations", "formulations_mix", "mixing_1", "admin"}:
+            raise ValueError("role_group must be one of sku_codes, formulations, formulations_mix, mixing_1, admin")
         return normalized
 
 
