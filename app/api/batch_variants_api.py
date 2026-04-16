@@ -29,7 +29,11 @@ def create_batch_variant(
 
     items = [(item.sku, item.ingredient_batch_code) for item in payload.items]
     # Resolve all requested SKU+batch keys in one BigQuery query to eliminate N+1 validation overhead.
-    existing_pairs = bigquery.list_existing_batches(items)
+    try:
+        # Convert malformed/blank batch payloads into a client-facing 4xx validation error instead of a server 500.
+        existing_pairs = bigquery.list_existing_batches(items)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     # Preserve original error payload format while using the bulk lookup result set.
     missing_batches = [f"{sku}:{batch_code}" for sku, batch_code in items if (sku, batch_code) not in existing_pairs]
     if missing_batches:
