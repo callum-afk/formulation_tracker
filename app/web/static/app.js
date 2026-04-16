@@ -10,6 +10,26 @@ const activeSubmitTokens = new Set();
 // Keep per-scope pending snapshots in memory so every submit owner can restore control state deterministically.
 const pendingScopeState = new WeakMap();
 
+// Track high-level client render metrics once per page load for backend/frontend bottleneck attribution.
+function logInitialRenderMetrics() {
+  // Use Navigation Timing when available to capture browser-level network and DOM milestones.
+  const navigationEntries = performance.getEntriesByType('navigation');
+  const navigation = navigationEntries && navigationEntries.length > 0 ? navigationEntries[0] : null;
+  // Wait until full page load so loadEventEnd and transfer metrics are stable.
+  window.addEventListener('load', () => {
+    if (!navigation) return;
+    // Emit concise render metrics to browser console for quick performance triage.
+    console.info('[perf][render] domContentLoadedMs=%s loadMs=%s transferBytes=%s',
+      Math.round(navigation.domContentLoadedEventEnd),
+      Math.round(navigation.loadEventEnd),
+      navigation.transferSize || 0,
+    );
+  });
+}
+
+// Enable initial render instrumentation immediately at script evaluation time.
+logInitialRenderMetrics();
+
 // Lazily create one shared pending overlay element to keep the visual treatment consistent across all submit flows.
 function ensurePendingOverlay() {
   let overlay = document.getElementById('global-submit-overlay');
@@ -191,6 +211,8 @@ function formatApiErrorMessage(data, fallbackMessage) {
 }
 
 async function postJson(url, payload) {
+  // Start a high-resolution timer so submit duration can be correlated with server timing headers.
+  const startedAt = performance.now();
   // Submit JSON payloads and gracefully surface non-JSON server errors.
   const response = await fetch(url, {
     method: 'POST',
@@ -207,10 +229,21 @@ async function postJson(url, payload) {
   if (!response.ok || !data.ok) {
     throw new Error(formatApiErrorMessage(data, response.statusText));
   }
+  // Emit API timing + payload size + server timings for bottleneck triage in browser devtools.
+  console.info('[perf][api] method=POST url=%s totalMs=%s responseBytes=%s apiMs=%s bqMs=%s bqQueries=%s',
+    url,
+    (performance.now() - startedAt).toFixed(1),
+    rawBody.length,
+    response.headers.get('X-Api-Time-Ms') || 'n/a',
+    response.headers.get('X-Bq-Time-Ms') || 'n/a',
+    response.headers.get('X-Bq-Query-Count') || 'n/a',
+  );
   return data.data;
 }
 
 async function putJson(url, payload) {
+  // Start a high-resolution timer so update roundtrips can be diagnosed consistently.
+  const startedAt = performance.now();
   // Submit JSON update payloads through a shared helper so error handling matches create flows.
   const response = await fetch(url, {
     method: 'PUT',
@@ -227,10 +260,21 @@ async function putJson(url, payload) {
   if (!response.ok || !data.ok) {
     throw new Error(formatApiErrorMessage(data, response.statusText));
   }
+  // Emit API timing + payload size + server timings for bottleneck triage in browser devtools.
+  console.info('[perf][api] method=PUT url=%s totalMs=%s responseBytes=%s apiMs=%s bqMs=%s bqQueries=%s',
+    url,
+    (performance.now() - startedAt).toFixed(1),
+    rawBody.length,
+    response.headers.get('X-Api-Time-Ms') || 'n/a',
+    response.headers.get('X-Bq-Time-Ms') || 'n/a',
+    response.headers.get('X-Bq-Query-Count') || 'n/a',
+  );
   return data.data;
 }
 
 async function fetchJson(url, init = undefined) {
+  // Start a high-resolution timer so read endpoint latency can be compared with rendering cost.
+  const startedAt = performance.now();
   // Load JSON payloads while handling plain-text backend errors without JSON parse crashes.
   const response = await fetch(url, init);
   const rawBody = await response.text();
@@ -243,6 +287,16 @@ async function fetchJson(url, init = undefined) {
   if (!response.ok || !data.ok) {
     throw new Error(formatApiErrorMessage(data, response.statusText));
   }
+  // Emit API timing + payload size + server timings for bottleneck triage in browser devtools.
+  console.info('[perf][api] method=%s url=%s totalMs=%s responseBytes=%s apiMs=%s bqMs=%s bqQueries=%s',
+    (init && init.method) || 'GET',
+    url,
+    (performance.now() - startedAt).toFixed(1),
+    rawBody.length,
+    response.headers.get('X-Api-Time-Ms') || 'n/a',
+    response.headers.get('X-Bq-Time-Ms') || 'n/a',
+    response.headers.get('X-Bq-Query-Count') || 'n/a',
+  );
   return data.data;
 }
 

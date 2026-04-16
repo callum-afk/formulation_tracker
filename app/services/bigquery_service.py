@@ -14,6 +14,7 @@ from google.cloud import bigquery
 from app.constants import FAILURE_MODES
 from app.services.codegen_service import int_to_code
 from app.services.codegen_service import code_to_int
+from app.services.metrics import add_bigquery_timing, request_id_var
 from app.services.permission_service import resolve_permissions_for_role
 
 
@@ -61,7 +62,42 @@ class BigQueryService:
         # Construct a query job config for typed parameters only; location must be passed to client.query itself.
         job_config = bigquery.QueryJobConfig(query_parameters=list(params))
         # Execute every query through a single helper path so all jobs target the same explicit BigQuery region.
-        return self.client.query(query, job_config=job_config, location=location)
+        job = self.client.query(query, job_config=job_config, location=location)
+        # Capture start time at submission so logs report end-to-end wait from submit to job completion.
+        started_at = datetime.now(timezone.utc)
+        # Snapshot request context for thread-safe log correlation once job.result is awaited later.
+        request_id = request_id_var.get()
+        # Preserve the original job.result callable so wrapper logic can delegate safely.
+        original_result = job.result
+        # Track whether this job has already been measured to avoid double counting on repeated result() calls.
+        measured = False
+
+        def instrumented_result(*args, **kwargs):
+            # Delegate to BigQuery and keep full original behavior/return shape.
+            result = original_result(*args, **kwargs)
+            nonlocal measured
+            # Emit metrics exactly once per job even if result() is called multiple times by callers.
+            if not measured:
+                measured = True
+                # Compute elapsed query wall-clock time in milliseconds for request-level aggregation.
+                elapsed_ms = (datetime.now(timezone.utc) - started_at).total_seconds() * 1000.0
+                add_bigquery_timing(elapsed_ms)
+                # Pull bytes processed when available to identify expensive scan-heavy queries.
+                total_bytes = getattr(job, "total_bytes_processed", None)
+                # Emit one structured log line per query with minimal SQL preview for hotspot triage.
+                LOGGER.info(
+                    "bigquery.query request_id=%s job_id=%s elapsed_ms=%.2f total_bytes_processed=%s sql_preview=%s",
+                    request_id,
+                    getattr(job, "job_id", ""),
+                    elapsed_ms,
+                    total_bytes if total_bytes is not None else "unknown",
+                    " ".join(query.strip().split())[:180],
+                )
+            return result
+
+        # Patch the job instance so every existing caller gains timing without refactoring call sites.
+        job.result = instrumented_result  # type: ignore[assignment]
+        return job
 
     def _render_sql(self, raw_sql: str) -> str:
         # Resolve template placeholders so infra SQL files can remain environment-agnostic in source control.
@@ -462,6 +498,15 @@ class BigQueryService:
             return dict(row)
         return None
 
+    def list_existing_ingredient_skus(self, skus: Sequence[str]) -> set[str]:
+        # Return only SKUs that currently exist so API validation avoids one-query-per-SKU fan-out.
+        unique_skus = sorted({str(sku).strip() for sku in skus if str(sku).strip()})
+        if not unique_skus:
+            return set()
+        query = f"SELECT sku FROM `{self.dataset}.ingredients` WHERE sku IN UNNEST(@skus)"
+        rows = self._run(query, [bigquery.ArrayQueryParameter("skus", "STRING", unique_skus)]).result()
+        return {str(row["sku"]) for row in rows if row.get("sku")}
+
     def update_msds(self, sku: str, object_path: str, filename: str, content_type: str, updated_by: str | None = None) -> None:
         query = (
             f"UPDATE `{self.dataset}.ingredients` "
@@ -583,6 +628,30 @@ class BigQueryService:
         for row in rows:
             return dict(row)
         return None
+
+    def list_existing_batches(self, sku_batch_pairs: Sequence[Tuple[str, str]]) -> set[Tuple[str, str]]:
+        # Validate batch variants in one query by matching requested SKU+batch combinations against persisted rows.
+        normalized_pairs = sorted({
+            (str(sku).strip(), str(batch_code).strip())
+            for sku, batch_code in sku_batch_pairs
+            if str(sku).strip() and str(batch_code).strip()
+        })
+        if not normalized_pairs:
+            return set()
+        query = (
+            "WITH requested AS ("
+            "  SELECT pair.sku AS sku, pair.batch_code AS batch_code "
+            "  FROM UNNEST(@pairs) AS pair"
+            ") "
+            "SELECT r.sku, r.batch_code "
+            "FROM requested r "
+            f"JOIN `{self.dataset}.ingredient_batches` b "
+            "ON b.sku = r.sku AND b.ingredient_batch_code = r.batch_code"
+        )
+        struct_values = [{"sku": sku, "batch_code": batch_code} for sku, batch_code in normalized_pairs]
+        pair_type = "STRUCT<sku STRING, batch_code STRING>"
+        rows = self._run(query, [bigquery.ArrayQueryParameter("pairs", pair_type, struct_values)]).result()
+        return {(str(row["sku"]), str(row["batch_code"])) for row in rows}
 
     def set_batch_archived(self, sku: str, batch_code: str, archived: bool, actor_email: Optional[str]) -> None:
         # Persist archive state and audit metadata so admins can hide old batches without deleting history.
@@ -1589,6 +1658,17 @@ class BigQueryService:
         )
         rows = self._run(query, []).result()
         return [str(row["processing_code"]) for row in rows if row.get("processing_code")]
+
+    def compounding_how_exists(self, processing_code: str) -> bool:
+        # Provide constant-time existence validation for create flows without fetching full code lists.
+        query = (
+            f"SELECT 1 FROM `{self.dataset}.compounding_how` "
+            "WHERE is_active = TRUE AND processing_code = @processing_code LIMIT 1"
+        )
+        rows = list(
+            self._run(query, [bigquery.ScalarQueryParameter("processing_code", "STRING", processing_code)]).result()
+        )
+        return bool(rows)
 
     def update_compounding_how(
         self,

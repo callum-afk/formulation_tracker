@@ -23,8 +23,10 @@ def create_set(
 ) -> ApiResponse:
     # Enforce set edit access before any formulation-set write occurs.
     require_permission(request, "sets.edit")
-    # Validate every supplied SKU before creating the deduplicated set hash.
-    missing_skus = [sku for sku in payload.skus if not bigquery.get_ingredient(sku)]
+    # Validate all supplied SKUs in one query to avoid one BigQuery roundtrip per row on large sets.
+    existing_skus = bigquery.list_existing_ingredient_skus(payload.skus)
+    # Keep response behavior identical by reporting only requested SKUs that were not found.
+    missing_skus = [sku for sku in payload.skus if sku not in existing_skus]
     if missing_skus:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
