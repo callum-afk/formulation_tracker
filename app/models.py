@@ -142,6 +142,14 @@ class BatchVariantItem(BaseModel):
     sku: str
     ingredient_batch_code: str
 
+    @validator("sku", "ingredient_batch_code", pre=True)
+    def validate_required_batch_item_fields(cls, value: str) -> str:
+        # Enforce non-empty string values so the batch-variant duplicate check never receives blank/null identifiers.
+        normalized = (value or "").strip()
+        if not normalized:
+            raise ValueError("batch item fields must be non-empty")
+        return normalized
+
 
 class BatchVariantCreate(BaseModel):
     # Enforce two-letter uppercase set and weight codes for batch variant API payloads.

@@ -630,28 +630,44 @@ class BigQueryService:
         return None
 
     def list_existing_batches(self, sku_batch_pairs: Sequence[Tuple[str, str]]) -> set[Tuple[str, str]]:
-        # Validate batch variants in one query by matching requested SKU+batch combinations against persisted rows.
-        normalized_pairs = sorted({
-            (str(sku).strip(), str(batch_code).strip())
-            for sku, batch_code in sku_batch_pairs
-            if str(sku).strip() and str(batch_code).strip()
-        })
+        # Normalize and validate caller-provided pairs defensively so malformed payloads return clear 4xx errors upstream.
+        normalized_pairs: set[Tuple[str, str]] = set()
+        for pair in sku_batch_pairs:
+            # Require each row to contain exactly (sku, ingredient_batch_code) to avoid obscure unpacking errors.
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                raise ValueError("Each batch item must contain exactly two values: sku and ingredient_batch_code")
+            raw_sku, raw_batch_code = pair
+            # Reject null-like values explicitly instead of coercing to the string literal "None".
+            if raw_sku is None or raw_batch_code is None:
+                raise ValueError("Batch items must include non-null sku and ingredient_batch_code")
+            sku = str(raw_sku).strip()
+            batch_code = str(raw_batch_code).strip()
+            # Block blank strings early so downstream duplicate checks and inserts stay deterministic.
+            if not sku or not batch_code:
+                raise ValueError("Batch items must include non-empty sku and ingredient_batch_code")
+            normalized_pairs.add((sku, batch_code))
+        # Return quickly when there is nothing to check.
         if not normalized_pairs:
             return set()
+
+        # Query only by the unique SKU list and do exact (sku, batch_code) matching in Python for robust behavior.
+        requested_skus = sorted({sku for sku, _ in normalized_pairs})
         query = (
-            "WITH requested AS ("
-            "  SELECT pair.sku AS sku, pair.batch_code AS batch_code "
-            "  FROM UNNEST(@pairs) AS pair"
-            ") "
-            "SELECT r.sku, r.batch_code "
-            "FROM requested r "
-            f"JOIN `{self.dataset}.ingredient_batches` b "
-            "ON b.sku = r.sku AND b.ingredient_batch_code = r.batch_code"
+            "SELECT sku, ingredient_batch_code "
+            f"FROM `{self.dataset}.ingredient_batches` "
+            "WHERE sku IN UNNEST(@skus)"
         )
-        struct_values = [{"sku": sku, "batch_code": batch_code} for sku, batch_code in normalized_pairs]
-        pair_type = "STRUCT<sku STRING, batch_code STRING>"
-        rows = self._run(query, [bigquery.ArrayQueryParameter("pairs", pair_type, struct_values)]).result()
-        return {(str(row["sku"]), str(row["batch_code"])) for row in rows}
+        rows = self._run(query, [bigquery.ArrayQueryParameter("skus", "STRING", requested_skus)]).result()
+
+        # Build exact matches in memory to avoid brittle BigQuery array-of-struct parameter serialization.
+        existing_pairs = set()
+        for row in rows:
+            # Convert each BigQuery row into a plain dict so optional key checks stay explicit and portable in tests.
+            row_data = dict(row)
+            if row_data.get("sku") is None or row_data.get("ingredient_batch_code") is None:
+                continue
+            existing_pairs.add((str(row_data["sku"]).strip(), str(row_data["ingredient_batch_code"]).strip()))
+        return normalized_pairs & existing_pairs
 
     def set_batch_archived(self, sku: str, batch_code: str, archived: bool, actor_email: Optional[str]) -> None:
         # Persist archive state and audit metadata so admins can hide old batches without deleting history.
