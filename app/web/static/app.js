@@ -65,19 +65,21 @@ function restoreScopeControls(snapshot) {
 }
 
 // Apply pending state for one scope and return an idempotent controller that owns its own cleanup.
-function beginPendingScope(scope, ownerType) {
+function beginPendingScope(scope, ownerType, options = {}) {
   // Guard against invalid targets because only element scopes can participate in pending UX.
   if (!(scope instanceof HTMLElement)) {
     return null;
   }
+  // Allow callers to preserve form control enabled state (e.g., native submit payload serialization).
+  const disableControls = options.disableControls !== false;
   // Reject duplicate begin calls on the same scope to prevent layered pending state owners.
   if (pendingScopeState.has(scope)) {
     return null;
   }
   // Create one unique token per submit owner so global overlay state stays deterministic.
   const token = Symbol(`submit-${ownerType}`);
-  // Capture and disable controls as a single atomic ownership snapshot.
-  const controlSnapshot = disableScopeControls(scope);
+  // Capture control state and optionally disable controls as one atomic ownership snapshot.
+  const controlSnapshot = disableControls ? disableScopeControls(scope) : [];
   // Persist ownership metadata so completion can validate token authority.
   pendingScopeState.set(scope, { token, ownerType, controlSnapshot, done: false });
   // Reflect pending state on the scope for CSS treatment and debugging.
@@ -2658,7 +2660,8 @@ function attachConversion1ProductsPage() {
   const avgFilmThicknessUmInput = document.getElementById('conversion1-products-avg-film-thickness-um');
   const sdFilmThicknessInput = document.getElementById('conversion1-products-sd-film-thickness');
   const filmThicknessVariationPercentInput = document.getElementById('conversion1-products-film-thickness-variation-percent');
-  const filterInput = document.getElementById('conversion1-products-filter');
+  const filterMixingHowInput = document.getElementById('conversion1-products-filter-mixing-how');
+  const filterMixedProductInput = document.getElementById('conversion1-products-filter-mixed-product');
   const filterButton = document.getElementById('conversion1-products-filter-button');
 
   // Reuse API-provided option lists so create and edit controls stay in sync with backend validation.
@@ -2669,7 +2672,7 @@ function attachConversion1ProductsPage() {
   };
 
   // Track pagination state locally to support filter reloads and table page-size controls.
-  const state = { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, search: '' };
+  const state = { page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, mixingHow: '', mixedProduct: '' };
 
   function normalizeCodeValue() {
     // Prefer manual pasted value when present, otherwise use dropdown selection.
@@ -2847,7 +2850,9 @@ function attachConversion1ProductsPage() {
       page: String(state.page),
       page_size: String(state.pageSize),
     });
-    if (state.search) query.set('search', state.search);
+    // Send both explicit filters so backend can independently match source how-code and mixed product code.
+    if (state.mixingHow) query.set('mixing_how', state.mixingHow);
+    if (state.mixedProduct) query.set('mixed_product', state.mixedProduct);
     const data = await fetchJson(`/api/conversion1_products?${query.toString()}`);
     state.total = Number(data.total || 0);
 
@@ -3040,8 +3045,9 @@ function attachConversion1ProductsPage() {
   });
 
   filterButton.addEventListener('click', async () => {
-    // Apply product-code substring filter and reload the first page of results.
-    state.search = (filterInput.value || '').trim();
+    // Apply both filter fields and reload the first page of results.
+    state.mixingHow = (filterMixingHowInput?.value || '').trim();
+    state.mixedProduct = (filterMixedProductInput?.value || '').trim();
     state.page = 1;
     await loadItems();
   });
@@ -3185,7 +3191,8 @@ function attachNativeSubmitPendingState() {
         return;
       }
       // Start the native pending lifecycle and leave teardown to the next page load/reset handlers.
-      const lifecycle = beginPendingScope(form, 'native');
+      // Keep native form controls enabled so browser payload serialization includes all field values.
+      const lifecycle = beginPendingScope(form, 'native', { disableControls: false });
       if (!lifecycle) {
         event.preventDefault();
         return;

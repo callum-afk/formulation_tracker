@@ -107,7 +107,10 @@
   <!-- Management table panel exposes filter, inline edit controls, and row-level save actions. -->
   <h2>Created products table</h2>
   <div class="inline-actions">
-    <label>Filter product codes <input id="conversion1-products-filter" placeholder="e.g. 0004, EV AB" /></label>
+    <!-- Filter by source Mixing How code so admins can narrow rows to one upstream process code. -->
+    <label>Filter Mixing How <input id="conversion1-products-filter-mixing-how" placeholder="e.g. EV AB JV" /></label>
+    <!-- Filter by mixed product code so users can search generated downstream product entries directly. -->
+    <label>Filter Mixed product <input id="conversion1-products-filter-mixed-product" placeholder="e.g. 0004, EV AB" /></label>
     <button id="conversion1-products-filter-button" type="button">Filter</button>
   </div>
   <div id="conversion1-products-results"></div>

@@ -113,7 +113,8 @@ def list_conversion1_how_codes(request: Request, bigquery: BigQueryService = Dep
 @router.get("", response_model=ApiResponse)
 def list_conversion1_products(
     request: Request,
-    search: str | None = None,
+    mixing_how: str | None = None,
+    mixed_product: str | None = None,
     page: int = 1,
     page_size: int = 50,
     bigquery: BigQueryService = Depends(get_bigquery),
@@ -123,7 +124,9 @@ def list_conversion1_products(
     safe_page = max(1, page)
     safe_page_size = max(1, min(page_size, 200))
     rows, total = bigquery.list_conversion1_products(
-        search=(search or "").strip() or None,
+        # Normalize both filters so empty form values do not generate no-op SQL predicates.
+        mixing_how=(mixing_how or "").strip() or None,
+        mixed_product=(mixed_product or "").strip() or None,
         page=safe_page,
         page_size=safe_page_size,
     )

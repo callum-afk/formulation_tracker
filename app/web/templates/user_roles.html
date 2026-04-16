@@ -10,6 +10,10 @@
 <section class="panel">
   <!-- Provide one straightforward admin form for creating new users or updating existing role assignments. -->
   <h2>Add or update user</h2>
+  <!-- Render validation feedback from failed POST attempts so admins can immediately correct bad input values. -->
+  {% if error_message %}
+  <p class="form-errors">{{ error_message }}</p>
+  {% endif %}
   <!-- Explicit native-submit marker keeps navigation submit lifecycle separate from JS-managed async forms. -->
   <form method="post" action="/admin/user-roles" class="form-stack" data-native-submit="true">
     <!-- Capture the authenticated identity key used by permission resolution. -->

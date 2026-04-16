@@ -71,6 +71,41 @@ class Conversion1ProductsTests(unittest.TestCase):
         # Confirm non-provided film tensile status inherits the tensile default fallback.
         self.assertEqual(parameter_map["tensile_films_status"], "Ready")
 
+    def test_list_conversion1_products_applies_mixing_how_and_mixed_product_filters(self) -> None:
+        # Ensure list query applies both filter predicates so UI filter fields actually narrow table rows.
+        service = BigQueryService.__new__(BigQueryService)
+        service.project_id = "test-project"
+        service.dataset_id = "test_dataset"
+        captured = {}
+
+        class _FakeResult:
+            def __init__(self, rows):
+                # Store provided rows so count/data branches can return deterministic fake results.
+                self._rows = rows
+
+            def result(self):
+                # Match BigQuery row iterator behavior with a static list for assertions.
+                return self._rows
+
+        def fake_run(query, params):
+            # Capture query + params from the row-select call where both filters should be present.
+            if "SELECT product_code" in query:
+                captured["query"] = query
+                captured["params"] = params
+            if "COUNT(1) AS total" in query:
+                return _FakeResult([{"total": 0}])
+            return _FakeResult([])
+
+        service._run = fake_run
+
+        service.list_conversion1_products(mixing_how="EV AB", mixed_product="0042", page=1, page_size=50)
+
+        self.assertIn("CONTAINS_SUBSTR(conversion1_how_code, @mixing_how)", captured["query"])
+        self.assertIn("CONTAINS_SUBSTR(product_code, @mixed_product)", captured["query"])
+        parameter_map = {parameter.name: parameter.value for parameter in captured["params"]}
+        self.assertEqual(parameter_map["mixing_how"], "EV AB")
+        self.assertEqual(parameter_map["mixed_product"], "0042")
+
 
 if __name__ == "__main__":
     unittest.main()
