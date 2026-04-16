@@ -769,6 +769,15 @@ async def user_roles_submit(
             last_name = parsed.last_name or ""
             role_group = parsed.role_group
             is_active = "true" if parsed.is_active else "false"
+        elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+            # Re-read raw form data as a defensive fallback for cases where injected Form() args arrive empty.
+            form = await request.form()
+            # Prefer explicit form keys and normalize whitespace before schema validation.
+            email = (form.get("email") or "").strip()
+            first_name = (form.get("first_name") or "").strip()
+            last_name = (form.get("last_name") or "").strip()
+            role_group = (form.get("role_group") or "").strip()
+            is_active = (form.get("is_active") or "true").strip().lower()
     # Re-validate normalized values through the shared model so form and JSON submissions follow one contract.
     try:
         # Validate form payload and normalize values before writing into BigQuery.

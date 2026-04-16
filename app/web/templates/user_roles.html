@@ -68,8 +68,8 @@
           <td>{{ 'Yes' if row.is_active else 'No' }}</td>
           <td>
             <!-- Use a compact inline form so edits stay reliable without client-side scripting. -->
-            <!-- Inline role update uses native submit + redirect, so it opts into native pending ownership explicitly. -->
-            <form method="post" action="/admin/user-roles" class="inline-actions" data-native-submit="true">
+            <!-- Keep row update as a plain POST form to avoid JS pending hooks altering submitted controls. -->
+            <form method="post" action="/admin/user-roles" class="inline-actions">
               <input type="hidden" name="email" value="{{ row.email }}" />
               <input type="hidden" name="first_name" value="{{ row.first_name or '' }}" />
               <input type="hidden" name="last_name" value="{{ row.last_name or '' }}" />
